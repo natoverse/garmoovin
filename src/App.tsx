@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { importArchive, type ImportProgress } from './archive'
 import { formatDate } from './gpx'
+import RouteThumbnail from './RouteThumbnail'
+import { ThumbnailCache } from './thumbnail-cache'
 import './App.css'
 
 type ImportState =
@@ -10,6 +12,9 @@ type ImportState =
 
 export default function App() {
   const [state, setState] = useState<ImportState>({ phase: 'idle' })
+  const [cacheNotice, setCacheNotice] = useState<{ warning: boolean; message: string } | null>(null)
+  const [clearingCache, setClearingCache] = useState(false)
+  const [cache] = useState(() => new ThumbnailCache((message) => setCacheNotice({ warning: true, message })))
   const currentImport = useRef<AbortController | null>(null)
   useEffect(() => () => currentImport.current?.abort(), [])
 
@@ -25,7 +30,7 @@ export default function App() {
     try {
       const progress = await importArchive(file, controller.signal, (progress) => {
         if (!controller.signal.aborted) setState({ phase: 'loading', archiveName: file.name, progress })
-      })
+      }, cache)
       if (!controller.signal.aborted) setState({ phase: 'complete', archiveName: file.name, progress })
     } catch (error) {
       if (controller.signal.aborted) return
@@ -34,6 +39,18 @@ export default function App() {
         archiveName: file.name,
         message: error instanceof Error ? error.message : 'The file could not be read.',
       })
+    }
+  }
+
+  async function clearCache() {
+    setClearingCache(true)
+    try {
+      await cache.clear()
+      setCacheNotice({ warning: false, message: 'Thumbnail cache cleared. Current previews remain on screen; reopen an archive to cache them again.' })
+    } catch (error) {
+      setCacheNotice({ warning: true, message: `Could not clear thumbnail cache. ${error instanceof Error ? error.message : 'Browser storage failed.'}` })
+    } finally {
+      setClearingCache(false)
     }
   }
 
@@ -56,8 +73,9 @@ export default function App() {
       <section className="import-panel" aria-labelledby="import-heading">
         <div>
           <h2 id="import-heading">Open your Garmin archive</h2>
-          <p>Select a GPX ZIP to browse activity names, types, and recorded dates.</p>
+          <p>Select a GPX ZIP to browse routes, activity names, types, and recorded dates.</p>
           <p className="privacy-note">Read in your browser. Nothing uploaded, no Garmin login.</p>
+          <p className="privacy-note">Only route thumbnails are cached on this device. Activity files are not saved.</p>
         </div>
         <label className="file-picker">
           <span>{state.phase === 'idle' ? 'Open GPX ZIP' : 'Choose another ZIP'}</span>
@@ -66,6 +84,18 @@ export default function App() {
       </section>
 
       {state.phase !== 'idle' && <p className="archive-name">Archive: <strong>{state.archiveName}</strong></p>}
+
+      <div className="thumbnail-controls">
+        <p>North-up route previews. Each route fits its own frame; scales differ.</p>
+        <button type="button" className="secondary-button" disabled={clearingCache} onClick={clearCache}>
+          {clearingCache ? 'Clearing cache...' : 'Clear thumbnail cache'}
+        </button>
+      </div>
+      {cacheNotice && (
+        <p className={`cache-notice${cacheNotice.warning ? ' cache-warning' : ''}`} role={cacheNotice.warning ? 'alert' : undefined}>
+          {cacheNotice.message}
+        </p>
+      )}
 
       <div role="status" className="import-status">
         {loading && (
@@ -91,13 +121,14 @@ export default function App() {
           <p>Newest first <span aria-hidden="true">/</span> Dates in UTC</p>
         </div>
         {activities.length > 0 ? (
-          <div className="table-container">
+          <div className="table-container" role="region" aria-label="Scrollable activity list" tabIndex={0}>
             <table>
-              <caption className="visually-hidden">Activities from the selected archive, newest first. Dates are in UTC.</caption>
-              <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Date (UTC)</th></tr></thead>
+              <caption className="visually-hidden">Activities with north-up route previews, newest first. Dates are in UTC.</caption>
+              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="name-heading">Name</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
               <tbody>
                 {activities.map((activity) => (
                   <tr key={activity.id}>
+                    <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
                     <td className="activity-name" title={activity.sourceFile}>{activity.name}</td>
                     <td><span className="type-label">{activity.type}</span></td>
                     <td className="activity-date">{activity.date === null ? 'Unknown' : (
