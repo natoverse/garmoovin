@@ -50,3 +50,11 @@ For this stage, the app runs on localhost. No deployment, Garmin authentication,
 - The browser download action is reported as requested, not verified on disk. Each snapshot replaces the in-memory comparison baseline; current drafts are retained. Navigation warnings apply to effective, nonempty proposals that differ from the most recent requested export and depend on browser support.
 - Archive replacement is disabled while an export is preparing. An accepted replacement clears drafts, export status, and the fingerprint; cancelling the warning preserves the prior archive and drafts.
 - Use `../stronger` as a reference where relevant. No backend, deployment, authentication, or Garmin calls are introduced.
+
+## Inline title refinement decisions (2026-09-17)
+
+- Replace the separate read-only Name and empty New title columns with one prefilled, editable Title field in the main activity details area. Every activity remains editable, including activities whose identity evidence blocks export.
+- Keep the field visually close to plain title text: bold text, a transparent background and border at rest, a subtle hover affordance, and a visible keyboard focus ring. Keep elevation/distance statistics below it and retain equal-sized route/elevation previews.
+- Preserve imported names internally for identity evidence, original-title search, grouping labels, and JSON `originalTitle`. The editor shows the draft when present without rewriting imported metadata; filtering must not remove a row as its title is being edited.
+- Blank values can exist while typing but never export. Leaving a blank/whitespace-only field restores its imported title; Escape discards that activity's draft and restores the imported title, and Enter leaves the editor. Ignore Enter/Escape handling during IME composition. Returning to the exact imported title removes the draft.
+- Keep existing trimming, export snapshots, hidden-row proposals, duplicate-name isolation, and navigation/archive-replacement safeguards. These decisions supersede the original two-field presentation, not the schema-v2 export contract established by spec 007.

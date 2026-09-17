@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { expect, test, type Download, type Page } from './test'
 import { createTitleMappingExport, type TitleMappingExport } from '../src/title-edits'
-import { expectLoaded, gpx, selectZip, track, zip } from './fixtures'
+import { expectActivityNames, expectLoaded, gpx, selectZip, track, zip } from './fixtures'
 
 declare global {
   interface Window {
@@ -24,7 +24,7 @@ const files: [string, string][] = [
   ['garmin-3.gpx', gpx(track('Riverside Ride', 'cycling', '2025-01-01T00:00:00Z'))],
 ]
 const title = (page: Page, path = 'nested/garmin-1.gpx', name = 'Green Mountain') =>
-  page.getByRole('textbox', { name: `New title for ${name} (${path})`, exact: true })
+  page.getByRole('textbox', { name: `Title for ${name} (${path})`, exact: true })
 const saveButton = (page: Page) => page.getByRole('button', { name: /^Save JSON \(\d+\)$/ })
 const change = (newTitle: string, sourceFile = 'nested/garmin-1.gpx', originalTitle = 'Green Mountain'): TitleMappingExport['changes'][number] => {
   const id = /garmin-(\d+)\.gpx$/.exec(sourceFile)?.[1]
@@ -106,10 +106,11 @@ async function installProbe(page: Page) {
   })
 }
 
-test('starts with empty accessible inputs and ignores blank or unchanged proposals', async ({ page }) => {
+test('starts with prefilled inline titles and ignores blank or unchanged proposals', async ({ page }) => {
   await setup(page)
   await expect(page.getByRole('textbox')).toHaveCount(3)
-  for (const input of await page.getByRole('textbox').all()) await expect(input).toBeEmpty()
+  await expectActivityNames(page, ['Green Mountain', 'Green Mountain', 'Riverside Ride'])
+  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Elevation', 'Title', 'Type', 'Date (UTC)'])
   for (const value of ['', '   ', 'Green Mountain', '  Green Mountain  ']) {
     await title(page).fill(value)
     await expect(saveButton(page)).toHaveText('Save JSON (0)')
@@ -118,11 +119,63 @@ test('starts with empty accessible inputs and ignores blank or unchanged proposa
   await title(page).fill('green mountain')
   await expect(saveButton(page)).toHaveText('Save JSON (1)')
   await expect(saveButton(page)).toBeEnabled()
-  await expect(page.locator('.activity-name')).toHaveText(['Green Mountain', 'Green Mountain', 'Riverside Ride'])
+  await expectActivityNames(page, ['green mountain', 'Green Mountain', 'Riverside Ride'])
   await title(page).fill('')
   await expect(saveButton(page)).toBeDisabled()
   await page.reload()
   await expect(page.getByText('Your activities will appear here')).toBeVisible()
+})
+
+test('inline editing supports clearing, typing, Enter, and restoring the imported title', async ({ page }) => {
+  await setup(page)
+  await page.getByRole('searchbox').fill('green')
+  const editor = title(page)
+  await editor.focus()
+  await editor.press('ControlOrMeta+A')
+  await editor.press('Backspace')
+  await expect(editor).toBeEmpty()
+  await expect(editor).toBeFocused()
+  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await editor.pressSequentially('New ridge route')
+  await expect(editor).toHaveValue('New ridge route')
+  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await editor.press('Enter')
+  await expect(editor).not.toBeFocused()
+  await expect(editor).toHaveValue('New ridge route')
+  await expect(saveButton(page)).toHaveText('Save JSON (1)')
+  await editor.focus()
+  await editor.press('Escape')
+  await expect(editor).toHaveValue('Green Mountain')
+  await expect(editor).not.toBeFocused()
+  await expect(saveButton(page)).toBeDisabled()
+  for (const blank of ['', '   ']) {
+    await editor.fill(blank)
+    await expect(editor).toHaveValue(blank)
+    await editor.press('Tab')
+    await expect(editor).toHaveValue('Green Mountain')
+    await expect(saveButton(page)).toBeDisabled()
+  }
+  await editor.fill('Temporary draft')
+  await editor.fill('Green Mountain')
+  await expect(saveButton(page)).toBeDisabled()
+  await expect(title(page, 'other/garmin-2.gpx')).toHaveValue('Green Mountain')
+})
+
+test('composition keys neither finish editing nor discard an in-progress title', async ({ page }) => {
+  await setup(page)
+  const editor = title(page)
+  await editor.fill('Composing a title')
+  for (const key of ['Enter', 'Escape']) {
+    await editor.evaluate((input, key) => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, isComposing: true }))
+    }, key)
+    await expect(editor).toBeFocused()
+    await expect(editor).toHaveValue('Composing a title')
+    await expect(saveButton(page)).toHaveText('Save JSON (1)')
+  }
+  await editor.press('Escape')
+  await expect(editor).toHaveValue('Green Mountain')
+  await expect(saveButton(page)).toBeDisabled()
 })
 
 test('exports all hidden proposals with exact source paths, original titles, and the ZIP fingerprint', async ({ page }) => {
@@ -145,7 +198,7 @@ test('exports all hidden proposals with exact source paths, original titles, and
   await page.getByRole('searchbox').fill('Green')
   await expect(title(page)).toHaveValue('  Ridge "loop" & overlook  ')
   await expect(title(page, 'other/garmin-2.gpx')).toHaveValue('Morning trail run')
-  await expect(page.locator('.activity-name')).toHaveText(['Green Mountain', 'Green Mountain'])
+  await expectActivityNames(page, ['  Ridge "loop" & overlook  ', 'Morning trail run'])
   expect(requests).toEqual([])
   expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0)
 })
@@ -253,7 +306,7 @@ test('replacement warns before discarding unexported edits and cancellation pres
   })
   await selectZip(page, replacement, 'replacement.zip')
   await expectLoaded(page, 1)
-  await expect(page.getByRole('textbox')).toBeEmpty()
+  await expect(page.getByRole('textbox')).toHaveValue('garmin-5.gpx')
   await expect(saveButton(page)).toBeDisabled()
   await expect(page.locator('.export-notice')).toHaveCount(0)
   await title(page, 'garmin-5.gpx', 'garmin-5.gpx').fill('New archive title')

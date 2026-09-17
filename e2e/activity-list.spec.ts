@@ -25,7 +25,7 @@ test('loads nested GPX files and preserves duplicate names in newest-first order
   ])
   await selectZip(page, archive)
   await expectLoaded(page, 4)
-  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Elevation', 'Name', 'New title', 'Type', 'Date (UTC)'])
+  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Elevation', 'Title', 'Type', 'Date (UTC)'])
   await expectMetadataRows(page, [
     'Latest activityCycling2025-01-02 01:00:00',
     'Same nameHiking2025-01-01 00:00:00',
@@ -169,7 +169,7 @@ test('renders imported text safely and fits a narrow viewport', async ({ page })
   await selectZip(page, await zip([['safe.gpx', gpx(track('&lt;img src="https://example.invalid/x" onerror="alert(1)"&gt;', 'long_unrecognized_activity_type', '2025-01-01T00:00:00Z'))]]))
   await expectLoaded(page, 1)
   await expect(page.locator('tbody img')).toHaveCount(0)
-  await expect(page.locator('.activity-name')).toContainText('<img')
+  await expect(page.locator('.activity-name')).toHaveValue(/<img/)
   expect(requests).toEqual([])
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })

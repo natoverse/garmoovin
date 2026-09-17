@@ -327,7 +327,7 @@ test('distinguishes renderer failures from absent routes and retains every activ
 test('shows metadata while rendering and never attaches an old import thumbnail to a replacement', async ({ page }) => {
   await setup(page, { delay: 700, failures: 0 })
   await selectZip(page, await zip([['route.gpx', routeGpx(triangle, 'Old route')]]))
-  await expect(page.locator('.activity-name')).toHaveText('Old route')
+  await expect(page.locator('.activity-name')).toHaveValue('Old route')
   await expect(page.getByText('Preparing...', { exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.thumbnailProbe.renders)).toBe(1)
   await selectZip(page, await zip([['route.gpx', routeGpx(line, 'New route')]]))

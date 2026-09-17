@@ -91,10 +91,10 @@ export default function App() {
     }
   }
 
-  function editTitle(id: string, value: string) {
+  function editTitle(id: string, value: string | null) {
     setDrafts((current) => {
       const next = new Map(current)
-      if (value === '') next.delete(id)
+      if (value === null) next.delete(id)
       else next.set(id, value)
       return next
     })
@@ -303,7 +303,8 @@ export default function App() {
             <div className="export-toolbar">
               <div>
                 <h2>Proposed title changes</h2>
-                <p>Draft a new title beside the original. Save exports all proposals, including hidden rows.</p>
+                <p>Edit activity titles in place. Save exports all proposals, including hidden rows; search still uses imported titles.</p>
+                <p id="title-edit-help">Press Escape to restore the imported title. Leaving a blank title also restores it; Enter finishes editing.</p>
                 <p>This website never connects to Garmin. Download the JSON and use the separate Python CLI to review and apply it locally.</p>
               </div>
               <button type="button" className="primary-button" disabled={saving || loading || changes.length === 0 || hasBlockedChanges} onClick={saveTitles}>
@@ -314,7 +315,7 @@ export default function App() {
               {loading ? 'You can draft titles now. Export is available once the archive finishes loading.'
                 : hasUnexportedChanges ? 'There are title changes not included in the latest JSON export.'
                 : changes.length > 0 ? 'Current proposals match the latest requested export. Drafts remain editable.'
-                : 'Leave a new title empty to keep the existing title. No changes are made to Garmin.'}
+                : 'Edit a title to propose a rename. No changes are made to Garmin.'}
             </p>
             {hasBlockedChanges && <div className="export-error" role="alert">
               <p>Some proposals lack valid identity evidence or have duplicate GPX paths. Clear or correct those proposals before saving. No partial file will be exported.</p>
@@ -337,29 +338,42 @@ export default function App() {
           <div className="table-container" role="region" aria-label="Scrollable activity list" tabIndex={0}>
             <table>
               <caption className="visually-hidden">{grouping ? 'Suggested groups ordered by their newest representative, with members newest first; not a globally chronological list.' : 'Activities with north-up route previews, newest first.'} Elevation profiles use independent distance and elevation scales. Dates are in UTC.</caption>
-              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="elevation-cell">Elevation</th><th scope="col" className="name-heading">Name</th><th scope="col" className="title-edit-heading">New title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th>{grouping && <th scope="col">Route suggestion</th>}</tr></thead>
+              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="elevation-cell">Elevation</th><th scope="col" className="name-heading">Title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th>{grouping && <th scope="col">Route suggestion</th>}</tr></thead>
               <tbody>
                 {orderedActivities.map((activity) => (
                   <tr key={activity.id} data-route-group={grouping ? groupById.get(activity.id)?.group.members[0] : undefined}>
                     <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
                     <td className="elevation-cell"><ElevationPreview profile={activity.elevation} name={activity.name} /></td>
                     <td className="activity-details">
-                      <div className="activity-name" title={activity.sourceFile}>{activity.name}</div>
-                      <ElevationStats profile={activity.elevation} />
-                    </td>
-                    <td className="title-edit-cell">
-                      <label className="visually-hidden" htmlFor={`new-title-${activity.id}`}>New title for {activity.name} ({activity.sourceFile})</label>
+                      <label className="visually-hidden" htmlFor={`activity-title-${activity.id}`}>Title for {activity.name} ({activity.sourceFile})</label>
                       <input
-                        id={`new-title-${activity.id}`}
+                        id={`activity-title-${activity.id}`}
+                        className="activity-name"
+                        title={activity.sourceFile}
                         type="text"
-                        value={drafts.get(activity.id) ?? ''}
-                        onChange={(event) => editTitle(activity.id, event.currentTarget.value)}
-                        placeholder="Leave blank to keep title"
+                        value={drafts.get(activity.id) ?? activity.name}
+                        onChange={(event) => editTitle(activity.id, event.currentTarget.value === activity.name ? null : event.currentTarget.value)}
+                        onBlur={(event) => {
+                          if (!event.currentTarget.value.trim()) editTitle(activity.id, null)
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.nativeEvent.isComposing) return
+                          if (event.key === 'Escape') {
+                            event.preventDefault()
+                            editTitle(activity.id, null)
+                            event.currentTarget.blur()
+                          } else if (event.key === 'Enter') {
+                            event.preventDefault()
+                            event.currentTarget.blur()
+                          }
+                        }}
+                        placeholder="Activity title"
                         autoComplete="off"
                         spellCheck={false}
-                        aria-describedby={exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile) ? `identity-error-${activity.id}` : undefined}
+                        aria-describedby={`title-edit-help${exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile) ? ` identity-error-${activity.id}` : ''}`}
                       />
                       {(exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile)) && <p className="field-error" id={`identity-error-${activity.id}`}>{exportErrors.get(activity.sourceFile) ?? `Duplicate GPX path: ${activity.sourceFile}. Renames for this path cannot be exported.`}</p>}
+                      <ElevationStats profile={activity.elevation} />
                     </td>
                     <td><span className="type-label">{activity.type}</span></td>
                     <td className="activity-date">{activity.date === null ? 'Unknown' : (

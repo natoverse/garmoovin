@@ -26,6 +26,14 @@ export async function expectLoaded(page: Page, count: number, skipped = 0) {
 
 export async function expectMetadataRows(page: Page, rows: string[]) {
   await expect.poll(() => page.locator('tbody tr').evaluateAll((elements) =>
-    elements.map((row) => Array.from(row.querySelectorAll('.activity-name, .type-label, .activity-date'), (cell) => cell.textContent).join('')),
+    elements.map((row) => Array.from(row.querySelectorAll('.activity-name, .type-label, .activity-date'), (cell) =>
+      cell instanceof HTMLInputElement ? cell.value : cell.textContent,
+    ).join('')),
   )).toEqual(rows)
+}
+
+export async function expectActivityNames(page: Page, names: string[]) {
+  await expect.poll(() => page.locator('.activity-name').evaluateAll((inputs: HTMLInputElement[]) =>
+    inputs.map((input) => input.value),
+  )).toEqual(names)
 }
