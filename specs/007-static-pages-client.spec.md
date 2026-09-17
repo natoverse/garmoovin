@@ -59,3 +59,8 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 - Display the supplied logo at the top of the app and README. Commit only the extracted public theme and optimized logo; keep the design ZIP ignored and do not ship its example HTML or support script.
 - Load Bagel Fat One, Hanken Grotesk, and Space Mono using the supplied Google Fonts CDN link with `display=swap` and local fallbacks. This explicitly permits public typography requests to Google's font domains, not activity uploads, analytics, or Garmin access. Document connection metadata and suppress referrers.
 - Preserve the `/groomin/` build path, accessible keyboard controls, contained mobile tables, and reduced-motion preferences. Browser tests stub the font service to verify fallback behavior without relying on external availability.
+
+## External activity link decisions (2026-09-17)
+
+- Spec 001 adds explicit links to Garmin Connect activity detail pages. These open Garmin's website in a separate tab only when activated, without opener access or a referrer; Garmin handles any required login.
+- The no-Garmin-access boundary still prohibits API calls, automatic lookups, authentication, and credentials in the viewer. External navigation sends only the filename-derived activity ID in the URL, not archive contents or draft titles, and does not change the standalone writer or JSON contract.
