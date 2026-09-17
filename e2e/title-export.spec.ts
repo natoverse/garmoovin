@@ -59,7 +59,27 @@ async function readDownload(download: Download): Promise<unknown> {
 async function save(page: Page) {
   const requested = page.waitForEvent('download')
   await saveButton(page).click()
-  return readDownload(await requested)
+  const result = await readDownload(await requested)
+  await expect(saveButton(page)).toBeEnabled()
+  return result
+}
+
+async function cachedTitle(page: Page, id = '1') {
+  return page.evaluate(async (id) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('groomin-activities', 1)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    try {
+      return await new Promise<string | null>((resolve, reject) => {
+        const tx = db.transaction('activities')
+        const request = tx.objectStore('activities').get(id)
+        tx.oncomplete = () => resolve(request.result?.metadata.name ?? null)
+        tx.onabort = () => reject(tx.error)
+      })
+    } finally { db.close() }
+  }, id)
 }
 
 async function installProbe(page: Page) {
@@ -201,6 +221,9 @@ test('exports all hidden proposals with exact source paths, original titles, and
   await expectActivityNames(page, ['  Ridge "loop" & overlook  ', 'Morning trail run'])
   expect(requests).toEqual([])
   expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0)
+  expect(await cachedTitle(page)).toBe('Ridge "loop" & overlook')
+  expect(await cachedTitle(page, '2')).toBe('Morning trail run')
+  expect(await cachedTitle(page, '3')).toBe('Riverside Ride')
 })
 
 test('repeated saves are complete current snapshots, reuse the hash, and release old download URLs', async ({ page }) => {
@@ -221,6 +244,7 @@ test('repeated saves are complete current snapshots, reuse the hash, and release
   await selectZip(page, await zip([['next.gpx', gpx()]]), 'next.zip')
   await expectLoaded(page, 1)
   expect(await page.evaluate(() => window.titleExportProbe.urls.size)).toBe(0)
+  expect(await cachedTitle(page)).toBe('First title')
   await expect(saveButton(page)).toBeDisabled()
 })
 
@@ -241,6 +265,7 @@ for (const failure of ['read', 'download']) {
     await expect(page.locator('.draft-status')).toContainText('not included in the latest JSON export')
     expect(downloads).toHaveLength(0)
     expect(await page.evaluate(() => window.titleExportProbe.urls.size)).toBe(0)
+    expect(await cachedTitle(page)).toBe('Green Mountain')
     await page.evaluate(() => {
       window.titleExportProbe.failRead = false
       window.titleExportProbe.failDownload = false
@@ -265,7 +290,62 @@ test('edits made while export is preparing remain unexported and cannot change t
   expect(await readDownload(await requested)).toEqual(mapping(archive, [change('At click time')]))
   await expect(title(page)).toHaveValue('Edited while preparing')
   await expect(page.locator('.draft-status')).toContainText('not included in the latest JSON export')
+  await expect(saveButton(page)).toBeEnabled()
+  expect(await cachedTitle(page)).toBe('At click time')
   expect(await save(page)).toEqual(mapping(archive, [change('Edited while preparing')]))
+  expect(await cachedTitle(page)).toBe('Edited while preparing')
+})
+
+for (const failure of ['quota', 'missing-record']) {
+  test(`JSON still downloads with a visible warning when titles cannot be remembered: ${failure}`, async ({ page }) => {
+    const archive = await setup(page)
+    await title(page).fill('Remember if possible')
+    await page.evaluate(async (failure) => {
+      if (failure === 'quota') {
+        const put = IDBObjectStore.prototype.put
+        IDBObjectStore.prototype.put = function (...args) {
+          if (this.name === 'activities') throw new DOMException('Synthetic title storage failure.', 'QuotaExceededError')
+          return put.apply(this, args)
+        }
+      } else {
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open('groomin-activities', 1)
+          request.onsuccess = () => resolve(request.result)
+          request.onerror = () => reject(request.error)
+        })
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction('activities', 'readwrite')
+            tx.objectStore('activities').delete('1')
+            tx.oncomplete = () => resolve()
+            tx.onabort = () => reject(tx.error)
+          })
+        } finally { db.close() }
+      }
+    }, failure)
+    expect(await save(page)).toEqual(mapping(archive, [change('Remember if possible')]))
+    await expect(page.locator('.export-error')).toContainText('JSON download requested')
+    await expect(page.locator('.export-error')).toContainText('Some exported titles could not be remembered')
+    await expect(page.locator('.export-error')).toHaveAttribute('role', 'alert')
+    expect(await cachedTitle(page)).toBe(failure === 'quota' ? 'Green Mountain' : null)
+    await expect(title(page)).toHaveValue('Remember if possible')
+  })
+}
+
+test('clearing during JSON preparation prevents the export from repopulating cached titles', async ({ page }) => {
+  await installProbe(page)
+  const archive = await setup(page)
+  await title(page).fill('Do not repopulate')
+  await page.evaluate(() => { window.titleExportProbe.holdRead = true })
+  const requested = page.waitForEvent('download')
+  await saveButton(page).click()
+  await expect.poll(() => page.evaluate(() => window.titleExportProbe.releaseRead !== null)).toBe(true)
+  await page.getByRole('button', { name: 'Clear activity cache' }).click()
+  await expect(page.locator('.cache-notice')).toContainText('Activity cache cleared.')
+  await page.evaluate(() => window.titleExportProbe.releaseRead?.())
+  expect(await readDownload(await requested)).toEqual(mapping(archive, [change('Do not repopulate')]))
+  await expect(page.locator('.export-error')).toContainText('Some exported titles could not be remembered')
+  expect(await cachedTitle(page)).toBeNull()
 })
 
 test('drafts survive later thumbnail and import updates; export waits for import completion', async ({ page }) => {

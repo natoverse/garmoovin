@@ -1,6 +1,6 @@
 # Plan: Fast Repeat Imports with Activity-ID Caching
 
-**Status:** Implemented on the feature branch after spec/design review in PR #13; implementation remains subject to PR review.
+**Status:** Implemented in PR #14 after spec/design review in PR #13. Saved-title follow-up implemented for PR review.
 
 ## Approach
 
@@ -12,7 +12,7 @@ Use a new `groomin-activities` database with two stores:
 
 | Store | Key | Value |
 | --- | --- | --- |
-| `activities` | Garmin activity ID string | Imported name/type/date; thumbnail PNG or no-route state; ready elevation profile or no-data state; prepared similarity payload or missing-geometry state |
+| `activities` | Garmin activity ID string | Starting title (initial GPX name or last exported title)/type/date; thumbnail PNG or no-route state; ready elevation profile or no-data state; prepared similarity payload or missing-geometry state |
 | `pairs` | Canonically ordered two-ID tuple | Completed, tolerance-independent D95 score |
 
 - Keep a database connection open for the app session. Batch reads and writes rather than opening a database or transaction for every individual image or pair.
@@ -43,7 +43,7 @@ Use a new `groomin-activities` database with two stores:
 
 ### Clearing and user feedback
 
-- Rename the UI action to **Clear activity cache** and explain the trust model next to it: cached activities are reused by ID; clear and reopen after editing GPX or when refreshed imported names are needed.
+- Rename the UI action to **Clear activity cache** and explain the trust model next to it: cached activities are reused by ID; Save JSON remembers exported titles. Clear and reopen after editing GPX or changing titles elsewhere.
 - Clear both new stores and the legacy image databases. Advance a cache generation so imports and grouping started before clearing cannot write their old results back, following the existing thumbnail-cache invalidation pattern.
 - Keep current in-memory rows and drafts intact. Existing computations may finish for the current view, but their old-generation cache writes remain disabled until a new import.
 - Show restored/processed activity counts and explicit storage warnings. Keep pending/missing/error distinctions and avoid claiming that a background write survived before it has committed.
@@ -54,7 +54,9 @@ Use a new `groomin-activities` database with two stores:
 - Preserve `sourceFile` from the newly selected archive, not a cached path. Keep duplicate-path and duplicate-target blockers.
 - Preserve the existing original-title/draft separation and exact schema-v2 export. A cache hit supplies the trusted cached imported title, type, and recorded time; the CLI still verifies remote identity and current state.
 - Do not read/hash the whole ZIP to determine cache reuse. Its required export fingerprint remains an on-demand operation when Save JSON is first used for that selected file.
-- Make the manual-invalidating tradeoff explicit: after a fresh export containing renamed titles, cached originals remain until clearing. This is not automatic synchronization with the CLI.
+- After requesting a valid JSON download, update only cached `metadata.name` for the captured export's IDs in one read/write transaction. Await its completion, preserve all derived data, and use the cache generation captured before hashing to prevent writes after clearing.
+- Remembered titles become the next import's originals, not pending drafts. Current-session originals remain unchanged; subsequent edits are not included in the captured save. Failed exports do not mutate the cache. Missing records or storage failure produce a visible title-persistence warning while retaining the JSON download.
+- Saving assumes the user applies that JSON with the CLI, not automatic Garmin synchronization. Clear to read titles changed elsewhere; no GPX parsing, new dependency, new store, or format migration is needed.
 
 ## Implementation Sequence After Review
 
@@ -75,3 +77,4 @@ Keep the implementation on a review branch and open a separate PR; do not merge 
 - Verify cached and cold geometry yield the same pair scores and bundle memberships, including filter-first all-member matching, tolerance changes, and records restored under existing memory limits.
 - Preserve editable titles, equal map/profile sizes, hidden-draft exports, current source paths, duplicate export blockers, and no new activity-data network traffic. Verify that only the documented cache payloads persist, not drafts, ZIPs, or GPX text.
 - Run the same warm-reload flow on private examples during implementation and inspect the results locally. Keep all private artifacts out of Git and remove temporary diagnostics afterward.
+- Cover saved-title reloads, new JSON originals, hidden/trimmed changes, unsaved later edits, failed export/storage, and clearing during save. Assert that cached previews and pair scores survive title updates and warm imports still perform zero XML or geometry work.

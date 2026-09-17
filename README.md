@@ -39,13 +39,13 @@ Images are generated in the browser and saved as part of the activity cache desc
 
 Groomin uses IndexedDB, not `localStorage`: database **`groomin-activities`**, with **`activities`** and **`pairs`** stores. A `garmin-<positive integer>.gpx` filename supplies the activity ID, retained as a string. Nested folders and case-insensitive filenames are supported. The cache survives reloads and works across overlapping archives; only entries in the ZIP you select appear.
 
-Each complete activity record contains its imported name/type/date, route PNG, elevation profile and statistics, and prepared similarity geometry. A warm hit skips GPX extraction, XML parsing, route hashing/projection, and preview/geometry preparation. Previously computed pair distances are also reused; bundles are still assembled for your current filters and tolerance. New IDs are processed normally. The viewer reports how many entries came **from cache** versus were **processed**.
+Each complete activity record contains its starting title/type/date, route PNG, elevation profile and statistics, and prepared similarity geometry. The title initially comes from GPX; **Save JSON** replaces the cached title with the exported title for the next load. A warm hit skips GPX extraction, XML parsing, route hashing/projection, and preview/geometry preparation. Previously computed pair distances are also reused; bundles are still assembled for your current filters and tolerance. New IDs are processed normally. The viewer reports how many entries came **from cache** versus were **processed**.
 
-**Clear activity cache** removes all those records and pair scores, plus both older thumbnail databases. Current activities and title drafts stay on screen, and work already running in that tab cannot refill the cleared cache. Reselect the ZIP to rebuild from its files. Clear after editing GPX data or re-exporting renamed activities: cached imported names, dates, profiles, and geometry intentionally stay unchanged until then. There are no source freshness hashes, timestamps, TTLs, or automatic Garmin refreshes.
+**Clear activity cache** removes all those records and pair scores, including remembered titles, plus both older thumbnail databases. Current activities and title drafts stay on screen, and work already running in that tab cannot refill the cleared cache. Reselect the ZIP to rebuild from its files. Clear after changing titles elsewhere or editing recorded GPX data. Renames exported through Save JSON do not require clearing: their exported titles become the starting titles on reload. Dates, profiles, and geometry intentionally stay unchanged until clearing. There are no source freshness hashes, timestamps, TTLs, or automatic Garmin refreshes.
 
 The first import after this feature is cold; old image-only cache entries are not migrated. Ordinary deployments retain a compatible cache; an incompatible cache-format update requires a rebuild. Entries without valid Garmin IDs, or with duplicate IDs within the selected ZIP, remain independently browsable but are not persisted. Missing-route/no-elevation results can be cached; transient failures are retried rather than stored as permanent results. Invalid records are reported and rebuilt, and storage failures fall back to ordinary processing with a warning.
 
-Reload still requires selecting a ZIP. Source files, title drafts, filters, and final bundles are not saved. The selected ZIP is hashed only when needed for the existing JSON export, not to check the cache. Browser storage can be cleared or become unavailable, and each browser profile/site origin has its own cache.
+Reload still requires selecting a ZIP. Source files, unsaved title drafts, filters, and final bundles are not saved. The selected ZIP is hashed only when needed for the existing JSON export, not to check the cache. Browser storage can be cleared or become unavailable, and each browser profile/site origin has its own cache.
 
 ## Elevation profiles
 
@@ -59,7 +59,7 @@ Profiles are prepared on cache misses and reused when filtering, grouping, or dr
 
 ## Title edits and JSON export
 
-Every activity has one editable **Title**, prefilled with its imported name. Click or tab into it to draft a rename in place. The field looks like title text at rest, with a subtle border on hover and a clear focus ring while editing. There is no separate New title column.
+Every activity has one editable **Title**, prefilled with its imported name or last exported title on a cache hit. Click or tab into it to draft a rename in place. The field looks like title text at rest, with a subtle border on hover and a clear focus ring while editing. There is no separate New title column.
 
 Press Enter or move focus away to finish editing; press Escape to discard that activity's draft and restore its imported name. A blank or whitespace-only field can remain empty while you type, but restores the imported name when you leave it. Blank, whitespace-only, and unchanged titles create no proposal; leading/trailing whitespace is removed from exported titles without changing what you typed.
 
@@ -69,7 +69,9 @@ Drafts remain attached to their individual activities while filtering, searching
 
 Export becomes available when import finishes. The ZIP fingerprint is computed on the first export and reused for that selected file. You can keep editing while JSON is prepared; those later edits are not silently included in an already requested snapshot. The browser handles the download location and filename, and the app cannot verify that you completed saving it to disk. No GPX files or Garmin activities are changed.
 
-Drafts remain after export, but are not restored after leaving the page. Replacing an archive asks before discarding proposals that differ from the latest export; browser navigation warns where supported. Save before leaving rather than relying on navigation warnings, especially on mobile. Browser downloads are separate files: restoring an imported title does not rewrite an earlier export.
+Once the JSON download is requested, its exported titles are remembered by activity ID. On the next load they are starting titles, not pending edits. Only the captured, trimmed export is remembered, including hidden rows; later unsaved edits are not. Current rows and drafts remain unchanged so repeated saves still produce complete snapshots. This assumes you apply the JSON with the CLI; it does not confirm a disk save or a successful Garmin update. If an activity has no complete cache record or storage fails, the JSON still downloads with a visible warning that titles could not all be remembered.
+
+Replacing an archive asks before discarding proposals that differ from the latest export; browser navigation warns where supported. Save before leaving rather than relying on navigation warnings, especially on mobile. Browser downloads are separate files: restoring an imported title does not rewrite an earlier export or undo a previously remembered title.
 
 ### JSON handoff: schema version 2
 
@@ -81,7 +83,7 @@ The top-level object has exactly `schemaVersion: 2`, `archiveFingerprint` (64 lo
 | `garminActivityId` | Positive decimal ID as a **string**, without leading zeros, matching the case-insensitive `garmin-<id>.gpx` basename |
 | `recordedStartTime` | Recorded start time in UTC as `YYYY-MM-DDTHH:mm:ss.sssZ`, year 0001–9999 |
 | `activityType` | Known GPX activity type as displayed, not blank or `Unknown` |
-| `originalTitle` | Original imported activity name |
+| `originalTitle` | Starting title for this import: GPX name or last exported title from cache |
 | `newTitle` | Trimmed, nonempty proposed name, different from the original |
 
 The date is the earliest valid trackpoint timestamp, falling back to GPX metadata/root time as in the viewer. The ID is **candidate evidence, not a verified remote identity**. The archive hash records provenance; it is not a signature, authorization, or a claim that the writer checked the ZIP. The writer independently verifies every target against Garmin.
@@ -147,7 +149,7 @@ The supplied warm cream/rust theme uses **Bagel Fat One**, **Hanken Grotesk**, a
 
 The GitHub Pages client holds no Garmin credentials and makes no automatic Garmin requests. Activating **View on Garmin Connect** opens Garmin's website with the activity ID in the URL, without a referrer or access to the Groomin tab; no GPX contents or draft titles are sent. Garmin handles login on its own site. Only the explicitly invoked local writer uses the Garmin API for authentication, activity reads, and title updates. Neither unit uploads GPX archives or route coordinates.
 
-The IndexedDB activity cache persists Garmin activity IDs, imported names/types/dates, route PNGs, elevation profiles/statistics, prepared spatial geometry, and computed pair distances. Images and derived geometry can reveal sensitive locations. The original ZIP/GPX, full source paths, raw coordinate/elevation arrays, title drafts, and final groups are not stored. Filename-based name fallbacks can appear in cached display names. Clear the activity cache when you no longer want this information on the device.
+The IndexedDB activity cache persists Garmin activity IDs, starting titles/types/dates, route PNGs, elevation profiles/statistics, prepared spatial geometry, and computed pair distances. Save JSON updates cached titles to the exported names. Images and derived geometry can reveal sensitive locations. The original ZIP/GPX, full source paths, raw coordinate/elevation arrays, unsaved title drafts, and final groups are not stored. Filename-based name fallbacks can appear in cached display names. Clear the activity cache when you no longer want this information on the device.
 
 **Clear activity cache** clears `groomin-activities` and removes `groomin-thumbnails` and `garmin-view-thumbnails` on the same origin; close other viewer tabs if cleanup is blocked. Old database names are retained only for cleanup compatibility.
 
