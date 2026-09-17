@@ -5,6 +5,7 @@ const EARTH_RADIUS = 6_371_008.8
 const VERSION = 'spherical-lines-v3:rdp5:sample10:d95:length80'
 const SIMPLIFY_METRES = 5
 const SAMPLE_METRES = 10
+const EDGE_BYTES = 384
 
 export const SIMILARITY_LIMITS = {
   inputPoints: 100_000,
@@ -68,6 +69,39 @@ interface PreparedRoute {
   bytes: number
 }
 
+export interface PairScore {
+  ids: [string, string]
+  score: number
+}
+
+interface SimilarityCache {
+  readPairs(ids: readonly string[], generation: number, signal: AbortSignal): Promise<PairScore[]>
+  writePairs(pairs: readonly PairScore[], generation: number, signal: AbortSignal): Promise<void>
+}
+
+type SimilaritySnapshot =
+  | { status: 'missing' }
+  | { status: 'ready'; descriptor: RouteDescriptor; tree: Tree; samples: Float64Array; bytes: number }
+
+function object(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function numbers(value: unknown, length: number): value is number[] {
+  return Array.isArray(value) && value.length === length && value.every((item) => typeof item === 'number' && Number.isFinite(item))
+}
+
+function validEdge(value: unknown): value is Edge {
+  return object(value) && numbers(value.a, 3) && numbers(value.b, 3) && numbers(value.tangent, 3) &&
+    numbers(value.bounds, 6) && typeof value.angle === 'number' && Number.isFinite(value.angle) && value.angle > 0 &&
+    typeof value.length === 'number' && Number.isFinite(value.length) && value.length > 0
+}
+
+function activityKey(id: string): string {
+  if (!/^[1-9]\d*$/.test(id)) throw new Error('A positive Garmin activity ID is required for cached geometry.')
+  return `activity:${id}`
+}
+
 // Descriptors retain derived lines and samples, never the original GPX coordinate arrays.
 const prepared = new WeakMap<RouteDescriptor, PreparedRoute>()
 
@@ -78,7 +112,7 @@ function abortError(): DOMException {
 class Work {
   private chunk = 0
   constructor(
-    private readonly signal: AbortSignal,
+    readonly signal: AbortSignal,
     private readonly lifetime: AbortSignal,
     private remaining: number,
   ) {}
@@ -393,11 +427,96 @@ export class SimilaritySession {
   private readonly pairs = new Map<string, number>()
   private cachedBytes = 0
   private retainedBytes = 0
+  private loadedPairs = ''
+  private readonly pendingPairs = new Map<string, PairScore>()
+  readonly stats = { preparations: 0, restorations: 0, distanceComparisons: 0 }
 
-  async prepare(route: Route, signal: AbortSignal): Promise<SimilarityGeometry> {
+  constructor(private readonly persistent?: SimilarityCache, private readonly generation = 0) {}
+
+  snapshot(geometry: SimilarityGeometry): SimilaritySnapshot | null {
+    if (geometry.status === 'missing') return { status: 'missing' }
+    if (geometry.status !== 'ready') return null
+    const data = prepared.get(geometry.descriptor)
+    if (!data || data.key !== geometry.key) throw new Error('Prepared geometry is unavailable for caching.')
+    return { status: 'ready', descriptor: geometry.descriptor, tree: data.tree, samples: data.samples, bytes: data.bytes }
+  }
+
+  async restore(id: string, value: unknown, signal: AbortSignal): Promise<SimilarityGeometry> {
+    const work = new Work(signal, this.lifetime.signal, SIMILARITY_LIMITS.preparationWork)
+    work.check()
+    if (object(value) && value.status === 'missing') {
+      this.stats.restorations++
+      return { status: 'missing' }
+    }
+    if (!object(value) || value.status !== 'ready' || !object(value.descriptor) ||
+      value.descriptor.version !== VERSION || typeof value.descriptor.length !== 'number' ||
+      !Number.isFinite(value.descriptor.length) || value.descriptor.length <= 0 ||
+      value.descriptor.length > SIMILARITY_LIMITS.lengthMetres ||
+      typeof value.descriptor.segmentCount !== 'number' || !Number.isInteger(value.descriptor.segmentCount) ||
+      value.descriptor.segmentCount < 1 || value.descriptor.segmentCount > SIMILARITY_LIMITS.inputSegments ||
+      typeof value.descriptor.sampleCount !== 'number' || !Number.isInteger(value.descriptor.sampleCount) ||
+      value.descriptor.sampleCount < 1 || value.descriptor.sampleCount > SIMILARITY_LIMITS.samples ||
+      !(value.samples instanceof Float64Array) || value.samples.length !== value.descriptor.sampleCount * 4
+    ) throw new Error('Invalid cached similarity descriptor.')
+    const nodes: unknown[] = [value.tree]
+    const seen = new Set<unknown>()
+    let edges = 0
+    while (nodes.length) {
+      const node = nodes.pop()
+      if (!object(node) || seen.has(node) || !numbers(node.bounds, 6)) throw new Error('Invalid cached spatial tree.')
+      seen.add(node)
+      if (seen.size > SIMILARITY_LIMITS.edges * 2) throw new Error('Cached spatial tree is too large.')
+      if (node.edges !== undefined) {
+        if (!Array.isArray(node.edges) || !node.edges.length || node.left !== undefined || node.right !== undefined || !node.edges.every(validEdge)) {
+          throw new Error('Invalid cached route edges.')
+        }
+        edges += node.edges.length
+        if (edges > SIMILARITY_LIMITS.edges) throw new Error('Cached route has too many edges.')
+      } else {
+        nodes.push(node.left, node.right)
+      }
+      if (work.tick()) await work.pause()
+    }
+    if (value.samples.some((sample, i) => !Number.isFinite(sample) || (i % 4 === 3 && sample <= 0))) {
+      throw new Error('Invalid cached route samples.')
+    }
+    work.check()
+    const bytes = edges * EDGE_BYTES + value.samples.byteLength
+    if (value.bytes !== bytes) throw new Error('Invalid cached geometry size.')
+    const key = activityKey(id)
+    const cached = this.lookup(key)
+    if (cached) return cached
+    try {
+      await this.checkCapacity(key, bytes, work)
+    } catch (error) {
+      work.check()
+      return { status: 'error', message: error instanceof Error ? error.message : 'Cached geometry could not be retained.' }
+    }
+    work.check()
+    const concurrent = this.lookup(key)
+    if (concurrent) return concurrent
+    const descriptor: RouteDescriptor = Object.freeze({
+      version: VERSION, length: value.descriptor.length,
+      segmentCount: value.descriptor.segmentCount, sampleCount: value.descriptor.sampleCount,
+    })
+    // Every reachable node/edge was checked above; retain the stored tree rather than rebuilding it.
+    prepared.set(descriptor, { key, tree: value.tree as Tree, samples: value.samples, bytes })
+    this.retainedBytes += bytes - (this.retained.get(key)?.bytes ?? 0)
+    this.retained.set(key, { descriptor: new WeakRef(descriptor), bytes })
+    const geometry = { status: 'ready', key, descriptor } as const
+    this.cache(geometry)
+    this.stats.restorations++
+    return geometry
+  }
+
+  async prepare(route: Route, signal: AbortSignal, id?: string): Promise<SimilarityGeometry> {
     const work = new Work(signal, this.lifetime.signal, SIMILARITY_LIMITS.preparationWork)
     work.check()
     try {
+      const knownKey = id === undefined ? undefined : activityKey(id)
+      const previous = knownKey ? this.lookup(knownKey) : undefined
+      if (previous) return previous
+      this.stats.preparations++
       await work.pause()
       limit(route.length > SIMILARITY_LIMITS.inputSegments, `more than ${SIMILARITY_LIMITS.inputSegments} segments.`)
       let count = 0
@@ -406,11 +525,11 @@ export class SimilaritySession {
         limit(count > SIMILARITY_LIMITS.inputPoints, `more than ${SIMILARITY_LIMITS.inputPoints} input points.`)
         if (work.tick()) await work.pause()
       }
-      const canonical = new Float64Array(count * 2 + route.length)
+      const canonical = knownKey ? null : new Float64Array(count * 2 + route.length)
       const segments: Vector[][] = []
       let offset = 0
       for (const segment of route) {
-        canonical[offset++] = segment.length
+        if (canonical) canonical[offset++] = segment.length
         let points: Vector[] = []
         const finish = () => {
           if (points.length > 1) segments.push(points)
@@ -419,15 +538,19 @@ export class SimilaritySession {
         for (const point of segment) {
           if (work.tick()) await work.pause()
           if (!validCoordinate(point)) {
-            canonical[offset++] = NaN
-            canonical[offset++] = NaN
+            if (canonical) {
+              canonical[offset++] = NaN
+              canonical[offset++] = NaN
+            }
             finish()
             continue
           }
           const longitude = Math.abs(point[1]) === 90 ? 0 : point[0] === 180 ? -180 : point[0]
           const normalized: Coordinate = [longitude || 0, point[1] || 0]
-          canonical[offset++] = normalized[0]
-          canonical[offset++] = normalized[1]
+          if (canonical) {
+            canonical[offset++] = normalized[0]
+            canonical[offset++] = normalized[1]
+          }
           const position = vector(normalized)
           if (!points.length || squaredDistance(points.at(-1)!, position) > 1e-28) {
             if (points.length) edge(points.at(-1)!, position)
@@ -437,7 +560,7 @@ export class SimilaritySession {
         finish()
       }
       if (!segments.length) return { status: 'missing' }
-      const key = `${VERSION}:${await digest(canonical.buffer)}`
+      const key = knownKey ?? `${VERSION}:${await digest(canonical!.buffer)}`
       work.check()
       const cached = this.lookup(key)
       if (cached) return cached
@@ -467,7 +590,7 @@ export class SimilaritySession {
         paths.push({ lines: path, length: pathLength, samples })
       }
       if (!lines.length) return { status: 'missing' }
-      const bytes = lines.length * 384 + sampleCount * 4 * Float64Array.BYTES_PER_ELEMENT
+      const bytes = lines.length * EDGE_BYTES + sampleCount * 4 * Float64Array.BYTES_PER_ELEMENT
       await this.checkCapacity(key, bytes, work)
       const samples = new Float64Array(sampleCount * 4)
       offset = 0
@@ -584,16 +707,30 @@ export class SimilaritySession {
     const key = a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`
     let score = this.pairs.get(key)
     if (score === undefined) {
+      this.stats.distanceComparisons++
       score = Math.max(await directed(first, second, work), await directed(second, first, work))
       work.check()
       if (this.pairs.size >= SIMILARITY_LIMITS.cachedPairs) {
         this.pairs.delete(this.pairs.keys().next().value!)
+      }
+      if (this.persistent && a.key.startsWith('activity:') && b.key.startsWith('activity:')) {
+        const ids: [string, string] = a.key < b.key ? [a.key.slice(9), b.key.slice(9)] : [b.key.slice(9), a.key.slice(9)]
+        this.pendingPairs.set(key, { ids, score })
+        if (this.pendingPairs.size >= 128) await this.flushPairs(work.signal)
+        work.check()
       }
     } else {
       this.pairs.delete(key)
     }
     this.pairs.set(key, score)
     return score <= tolerance + 1e-7
+  }
+
+  private async flushPairs(signal: AbortSignal): Promise<void> {
+    if (!this.persistent || !this.pendingPairs.size) return
+    const pending = Array.from(this.pendingPairs)
+    await this.persistent.writePairs(pending.map(([, pair]) => pair), this.generation, signal)
+    for (const [key, pair] of pending) if (this.pendingPairs.get(key) === pair) this.pendingPairs.delete(key)
   }
 
   async group(
@@ -608,6 +745,22 @@ export class SimilaritySession {
     }
     limit(activities.length > SIMILARITY_LIMITS.activities, `more than ${SIMILARITY_LIMITS.activities} visible activities.`)
     await work.pause()
+    const cacheIds = Array.from(new Set(activities.flatMap(({ geometry }) =>
+      geometry.status === 'ready' && geometry.key.startsWith('activity:') ? [geometry.key.slice(9)] : [],
+    ))).sort()
+    const signature = JSON.stringify(cacheIds)
+    if (this.persistent && signature !== this.loadedPairs) {
+      const pairs = await this.persistent.readPairs(cacheIds, this.generation, signal)
+      work.check()
+      for (const pair of pairs) {
+        const key = `${activityKey(pair.ids[0])}|${activityKey(pair.ids[1])}`
+        if (!this.pairs.has(key)) {
+          if (this.pairs.size >= SIMILARITY_LIMITS.cachedPairs) this.pairs.delete(this.pairs.keys().next().value!)
+          this.pairs.set(key, pair.score)
+        }
+      }
+      this.loadedPairs = signature
+    }
     const ordered = [...activities].sort((a, b) =>
       compareActivities(a, b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     )
@@ -653,6 +806,8 @@ export class SimilaritySession {
       }
     }
     work.check()
+    await this.flushPairs(signal)
+    work.check()
     return groups
   }
 
@@ -665,6 +820,7 @@ export class SimilaritySession {
     this.retained.clear()
     this.descriptors.clear()
     this.pairs.clear()
+    this.pendingPairs.clear()
     this.cachedBytes = 0
     this.retainedBytes = 0
   }

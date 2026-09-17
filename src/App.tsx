@@ -5,7 +5,7 @@ import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
 import ElevationPreview, { ElevationStats } from './ElevationPreview'
 import { SimilaritySession, type SimilarityGroup } from './similarity'
-import { ThumbnailCache } from './thumbnail-cache'
+import { ActivityCache } from './activity-cache'
 import { candidateActivityId, createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
 import { useSimilarity } from './use-similarity'
 import logo from './assets/groomin-logo.jpg'
@@ -35,7 +35,7 @@ export default function App() {
   const [clearingCache, setClearingCache] = useState(false)
   const [grouping, setGrouping] = useState(false)
   const [tolerance, setTolerance] = useState(50)
-  const [cache] = useState(() => new ThumbnailCache((message) => setCacheNotice({ warning: true, message })))
+  const [cache] = useState(() => new ActivityCache((message) => setCacheNotice({ warning: true, message })))
   const currentImport = useRef<AbortController | null>(null)
   const similarity = useRef<SimilaritySession | null>(null)
   const archiveFile = useRef<File | null>(null)
@@ -44,6 +44,7 @@ export default function App() {
   useEffect(() => () => {
     currentImport.current?.abort()
     similarity.current?.dispose()
+    cache.close()
     if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current)
   }, [])
 
@@ -59,7 +60,7 @@ export default function App() {
 
     currentImport.current?.abort()
     similarity.current?.dispose()
-    const session = new SimilaritySession()
+    const session = new SimilaritySession(cache, cache.generation)
     similarity.current = session
     const controller = new AbortController()
     currentImport.current = controller
@@ -141,9 +142,9 @@ export default function App() {
     setClearingCache(true)
     try {
       await cache.clear()
-      setCacheNotice({ warning: false, message: 'Thumbnail cache cleared. Current previews remain on screen; reopen an archive to cache them again.' })
+      setCacheNotice({ warning: false, message: 'Activity cache cleared. Current activities and drafts remain on screen; reopen the archive to rebuild from its GPX files.' })
     } catch (error) {
-      setCacheNotice({ warning: true, message: `Could not clear thumbnail cache. ${error instanceof Error ? error.message : 'Browser storage failed.'}` })
+      setCacheNotice({ warning: true, message: `Could not clear activity cache. ${error instanceof Error ? error.message : 'Browser storage failed.'}` })
     } finally {
       setClearingCache(false)
     }
@@ -281,7 +282,7 @@ export default function App() {
           <h2 id="import-heading">Open your Garmin archive</h2>
           <p>Select a GPX ZIP to browse routes, elevation profiles, activity names, types, and recorded dates.</p>
           <p className="privacy-note">Read in your browser. Nothing uploaded, no Garmin login.</p>
-          <p className="privacy-note">Only route thumbnails are cached on this device. Elevation profiles stay in memory; activity files are not saved.</p>
+          <p className="privacy-note">Activity metadata, route images, elevation profiles, and location-bearing comparison data are cached on this device. Source files and title drafts are not saved.</p>
         </div>
         <label className="file-picker">
           <span>{state.phase === 'idle' ? 'Open GPX ZIP' : 'Choose another ZIP'}</span>
@@ -294,9 +295,19 @@ export default function App() {
       <div className="thumbnail-controls">
         <p>North-up route previews and recorded elevation in meters over distance in kilometers. Each preview fits its own frame; scales differ.</p>
         <button type="button" className="secondary-button" disabled={clearingCache} onClick={clearCache}>
-          {clearingCache ? 'Clearing cache...' : 'Clear thumbnail cache'}
+          {clearingCache ? 'Clearing cache...' : 'Clear activity cache'}
         </button>
       </div>
+      <p className="cache-help">Cached activities are reused by Garmin ID. After changing GPX data or re-exporting renamed activities, clear the activity cache and reopen the archive to see those changes.</p>
+      {progress && (
+        <p className="cache-summary"
+          data-extracted={progress.extracted}
+          data-prepared={similarity.current?.stats.preparations ?? 0}
+          data-restored={similarity.current?.stats.restorations ?? 0}
+          data-compared={similarity.current?.stats.distanceComparisons ?? 0}>
+          {progress.cacheHits} from cache · {progress.processed} processed
+        </p>
+      )}
       {cacheNotice && (
         <p className={`cache-notice${cacheNotice.warning ? ' cache-warning' : ''}`} role={cacheNotice.warning ? 'alert' : undefined}>
           {cacheNotice.message}
@@ -359,7 +370,7 @@ export default function App() {
           <p>Suggestions for human review, not proof of the same route. No titles are chosen or changed. Every pair in a group must be within tolerance for 95% of both recorded routes, with a shorter/longer length ratio of at least 80%.</p>
           <p>Routes keep their location, scale, and orientation. Travel direction and loop starting points do not matter. Small detours or nearby parallel paths can match; extra laps or large GPS spikes may not.</p>
           <p>Groups are rebuilt after filtering. A looser tolerance can rearrange groups, not just merge them. Matches appear first as expanded bundles. Each heading uses the newest member's imported title, not a preferred or shared title.</p>
-          <p>Analysis stays in memory only and is released when you choose another ZIP or leave the page.</p>
+          <p>Prepared routes and computed pair distances are cached on this device. Bundles are rebuilt for the current filters; clearing the activity cache removes the saved comparison data.</p>
           {pendingGeometryCount > 0 && <p aria-live="polite">Preparing route geometry: {pendingGeometryCount} pending.</p>}
         </section>
       )}

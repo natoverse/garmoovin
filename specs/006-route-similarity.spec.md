@@ -60,6 +60,6 @@ Investigation of a privately supplied example confirmed the expected matches wit
 - Do not add collapsing, bulk renaming, approval controls, or persistent review state in this iteration.
 - Cover matches-first ordering, consecutive numbering, membership boundaries, representative changes, live editing, missing/error states, and narrow-screen preview sizing with synthetic browser regressions.
 
-## Proposed caching revision (spec 009)
+## Activity-ID caching revision (spec 009)
 
-- Spec 009 proposes persisting prepared similarity geometry by Garmin activity ID and numerical pair scores by unordered ID pair, with manual clearing after source changes. This would replace session-only persistence while retaining the existing matching, memory/work limits, filtered regrouping, and bundle presentation. Final groups remain transient; the current release is unchanged until implementation.
+- Spec 009 persists prepared similarity geometry by Garmin activity ID and numerical pair scores by unordered ID pair, with manual clearing after source changes. Snapshot/restore retains the existing spatial tree and weighted samples rather than reconstructing them. This replaces session-only persistence while retaining matching, memory/work limits, filtered regrouping, and bundle presentation. Final groups remain transient. Anonymous/duplicate-ID routes keep session-only geometry reuse.

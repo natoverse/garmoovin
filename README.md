@@ -31,13 +31,21 @@ The list reports **Showing X of Y activities**, preserving newest-first order an
 
 ## Route previews
 
-**Planned caching improvement:** Spec 009 (`specs/009-activity-cache.spec.md`, with its companion implementation plan) proposes trusted activity-ID caching for imported metadata, route images, elevation profiles, prepared similarity geometry, and pair scores. Repeat imports would skip GPX processing for cached IDs, with one manual **Clear activity cache** action after source changes. This design is not implemented yet; the current thumbnail-only behavior is described below.
-
 Thumbnails show the route on a plain background with north at the top. Each route fits its own frame, with longitude scaled for the route's latitude; matching thumbnail sizes do not imply matching distances. Separate tracks, segments, and invalid-coordinate gaps are never joined. **No route** means there are not enough connected, distinct valid points; **Thumbnail unavailable** indicates a rendering error, not a lost activity.
 
-Images are generated in the browser and reused from a local cache when reopening an archive. The cache is keyed by route geometry and rendering settings, not the activity name or filename. Renaming a file does not regenerate an unchanged route; changing its geometry does. Unreadable cache entries are regenerated, and storage failures are reported while keeping previews available for the current session.
+Images are generated in the browser and saved as part of the activity cache described below. Garmin activity IDs, not route hashes, identify cached activities. An ID is trusted until you clear the cache, even if its GPX coordinates have changed.
 
-**Clear thumbnail cache** removes stored previews, including any version left by an older renderer. Current images remain visible in memory, but an import already in progress cannot refill the cleared cache. Reopen an archive to generate and cache its previews again. Browser storage may also be evicted or unavailable, and caches are separate for each browser profile and site origin.
+## Fast repeat imports and the activity cache
+
+Groomin uses IndexedDB, not `localStorage`: database **`groomin-activities`**, with **`activities`** and **`pairs`** stores. A `garmin-<positive integer>.gpx` filename supplies the activity ID, retained as a string. Nested folders and case-insensitive filenames are supported. The cache survives reloads and works across overlapping archives; only entries in the ZIP you select appear.
+
+Each complete activity record contains its imported name/type/date, route PNG, elevation profile and statistics, and prepared similarity geometry. A warm hit skips GPX extraction, XML parsing, route hashing/projection, and preview/geometry preparation. Previously computed pair distances are also reused; bundles are still assembled for your current filters and tolerance. New IDs are processed normally. The viewer reports how many entries came **from cache** versus were **processed**.
+
+**Clear activity cache** removes all those records and pair scores, plus both older thumbnail databases. Current activities and title drafts stay on screen, and work already running in that tab cannot refill the cleared cache. Reselect the ZIP to rebuild from its files. Clear after editing GPX data or re-exporting renamed activities: cached imported names, dates, profiles, and geometry intentionally stay unchanged until then. There are no source freshness hashes, timestamps, TTLs, or automatic Garmin refreshes.
+
+The first import after this feature is cold; old image-only cache entries are not migrated. Ordinary deployments retain a compatible cache; an incompatible cache-format update requires a rebuild. Entries without valid Garmin IDs, or with duplicate IDs within the selected ZIP, remain independently browsable but are not persisted. Missing-route/no-elevation results can be cached; transient failures are retried rather than stored as permanent results. Invalid records are reported and rebuilt, and storage failures fall back to ordinary processing with a warning.
+
+Reload still requires selecting a ZIP. Source files, title drafts, filters, and final bundles are not saved. The selected ZIP is hashed only when needed for the existing JSON export, not to check the cache. Browser storage can be cleared or become unavailable, and each browser profile/site origin has its own cache.
 
 ## Elevation profiles
 
@@ -47,7 +55,7 @@ Separate tracks, segments, invalid coordinates, and missing or invalid elevation
 
 **No elevation data** means there is no drawable run; **Preparing elevation...** is a pending state, and **Elevation unavailable** indicates a processing error with a reason available on hover and to assistive technology. None of these states removes the activity or route preview. Profiles have accessible activity-specific range/distance descriptions, and the table scrolls horizontally on narrow screens to keep both previews reachable.
 
-Profiles are prepared once per import and reused when filtering, grouping, or drafting titles. They stay in browser memory only, disappear when replacing the archive or leaving the page, and do not depend on the route-thumbnail cache. Reopening a file reads its current elevations even when its unchanged route image is cached. No chart service, terrain lookup, new persistent storage, export fields, or Garmin requests are added.
+Profiles are prepared on cache misses and reused when filtering, grouping, or drafting titles. Their rendered path and statistics are persisted with the activity, so reopening a cached ID does not process its elevations again. Clear the activity cache and reselect the ZIP to read changed elevations. No chart service, terrain lookup, export fields, or Garmin requests are added.
 
 ## Title edits and JSON export
 
@@ -129,7 +137,7 @@ A separate **Ungrouped activities** section follows the bundles in newest-first 
 
 These are review suggestions, not proof of equivalence. Small detours covering up to 5% of a route may be missed, and nearby parallel paths can match. Different substantial loops normally fail; extra laps count toward noise-reduced recorded length, so one versus two laps fails but some higher lap counts can pass. Very small reversals at the GPS-noise scale can be smoothed away; large GPS spikes can prevent matching. Tracks, segments, and invalid-coordinate gaps stay disconnected; open paths are not closed or repaired.
 
-Derived geometry and bounded pair-score reuse live only in memory for the selected archive. Filtering, regrouping, and slider changes do not reparse GPX or redraw previews. Geometry remains usable even with thumbnail-cache hits, clearing, or image/storage errors. Analysis yields between bounded work chunks so filters and archive replacement remain available; superseded results are discarded. Resource limits produce an explanation rather than silently dropping part of a route. Large archives can still take substantial computation; reload requires reimport.
+Prepared geometry and numerical pair distances persist in the activity cache. A warm import restores the spatial representation without simplifying or sampling the GPX again; a cached distance works across tolerance changes. Only comparisons actually requested by grouping are computed, so newly encountered pairs can still take time. Filtering, regrouping, and slider changes do not reparse GPX or redraw previews. Clearing leaves the current in-memory view usable but removes its persistent data. Analysis remains interruptible, and existing resource limits retain activities with an explanation rather than truncating routes.
 
 ## Privacy
 
@@ -139,9 +147,9 @@ The supplied warm cream/rust theme uses **Bagel Fat One**, **Hanken Grotesk**, a
 
 The GitHub Pages client holds no Garmin credentials and makes no automatic Garmin requests. Activating **View on Garmin Connect** opens Garmin's website with the activity ID in the URL, without a referrer or access to the Groomin tab; no GPX contents or draft titles are sent. Garmin handles login on its own site. Only the explicitly invoked local writer uses the Garmin API for authentication, activity reads, and title updates. Neither unit uploads GPX archives or route coordinates.
 
-Only derived PNG thumbnails and their integrity/identity hashes are persisted in the browser's IndexedDB storage. Names, dates, filenames, coordinates, elevations/profiles, similarity descriptors/results, and GPX archives are not stored there. Route images can still reveal sensitive locations; clear the thumbnail cache when you no longer want them on this device.
+The IndexedDB activity cache persists Garmin activity IDs, imported names/types/dates, route PNGs, elevation profiles/statistics, prepared spatial geometry, and computed pair distances. Images and derived geometry can reveal sensitive locations. The original ZIP/GPX, full source paths, raw coordinate/elevation arrays, title drafts, and final groups are not stored. Filename-based name fallbacks can appear in cached display names. Clear the activity cache when you no longer want this information on the device.
 
-Groomin uses the `groomin-thumbnails` cache. **Clear thumbnail cache** also removes the legacy app's cache on the same browser origin; close other viewer tabs if cleanup is blocked. Old private-storage/cache identifiers are retained only for compatibility, not current branding.
+**Clear activity cache** clears `groomin-activities` and removes `groomin-thumbnails` and `garmin-view-thumbnails` on the same origin; close other viewer tabs if cleanup is blocked. Old database names are retained only for cleanup compatibility.
 
 ZIP and GPX files, `garmin-title-mappings*.json` exports (including browser-numbered copies), `local-data/`, build output, and browser-test artifacts are Git-ignored. Keep renamed exports and any other locally generated activity data in `local-data/`. Neither downloads nor `local-data/` belong in the deployed artifact. The build has no public-data directory and includes only the app entry point and its imported assets; private archives must never be imported into application source.
 

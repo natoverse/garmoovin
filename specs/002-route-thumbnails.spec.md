@@ -56,6 +56,6 @@ Generate thumbnails once and reuse a local cache rather than redrawing them when
 
 - Match the supplied theme with rust `#B84A1C` route strokes on cream `#F5E7C8`. Increment the renderer version to 2 so dark/cyan previews are not reused for the new theme. Projection, dimensions, geometry handling, and privacy behavior remain unchanged.
 
-## Proposed caching revision (spec 009)
+## Activity-ID caching revision (spec 009)
 
-- Spec 009 proposes replacing route-content keys with trusted Garmin activity IDs and manual clearing after source changes. It includes complete activity processing results, not just PNGs, so warm imports can bypass GPX parsing. This supersedes the content-based freshness contract only when implemented; the current release remains unchanged.
+- Spec 009 replaces route-content keys with trusted Garmin activity IDs and manual clearing after source changes. Complete cached activities bypass GPX parsing and projection; no-ID or duplicate-ID entries use uncached rendering. This supersedes the content-based freshness and thumbnail-only persistence contracts above. PNG decoding/dimension validation remains, but route fingerprints and image checksums are no longer lookup requirements.

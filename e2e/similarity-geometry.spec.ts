@@ -38,6 +38,51 @@ async function matches(first: Route, second: Route, tolerance = 50): Promise<boo
   }
 }
 
+test('snapshots restore usable geographic geometry without re-preparing or sharing a disposed session', async () => {
+  const source = new SimilaritySession()
+  const first = await source.prepare(route([[0, 0], [300, 0], [300, 300], [0, 0]], 179.999, 70), signal(), '1')
+  const second = await source.prepare(route([[0, 5], [300, 5], [300, 305], [0, 5]], 179.999, 70), signal(), '2')
+  const snapshots = [first, second].map((geometry) => structuredClone(source.snapshot(geometry)))
+  const expected = await source.group([activity('a', first), activity('b', second)], 50, signal())
+  source.dispose()
+  const target = new SimilaritySession()
+  const a = await target.restore('1', snapshots[0], signal())
+  const b = await target.restore('2', snapshots[1], signal())
+  expect(target.stats.preparations).toBe(0)
+  expect(target.stats.restorations).toBe(2)
+  expect(await target.group([activity('a', a), activity('b', b)], 50, signal())).toEqual(expected)
+  const [sameA, sameB] = await Promise.all([
+    target.restore('3', snapshots[0], signal()), target.restore('3', snapshots[0], signal()),
+  ])
+  expect(sameA).toBe(sameB)
+  const controller = new AbortController()
+  controller.abort()
+  await expect(target.restore('4', snapshots[0], controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+  target.dispose()
+})
+
+test('restored descriptors obey the retained memory budget without discarding existing routes', async () => {
+  const source = new SimilaritySession()
+  const geometry = await ready(source, line(0, 490_000))
+  const snapshot = structuredClone(source.snapshot(geometry))
+  if (snapshot?.status !== 'ready') throw new Error('Expected ready snapshot')
+  source.dispose()
+  const target = new SimilaritySession()
+  const retained: SimilarityGeometry[] = []
+  const capacity = Math.floor(SIMILARITY_LIMITS.retainedDescriptorBytes / snapshot.bytes)
+  for (let i = 0; i < capacity; i++) {
+    const restored = await target.restore(String(i + 1), snapshot, signal())
+    expect(restored.status).toBe('ready')
+    retained.push(restored)
+  }
+  const overLimit = await target.restore(String(capacity + 1), snapshot, signal())
+  expect(overLimit.status).toBe('error')
+  if (overLimit.status === 'error') expect(overLimit.message).toContain('memory')
+  expect(target.snapshot(retained[0]!)).not.toBeNull()
+  expect(target.stats.preparations).toBe(0)
+  target.dispose()
+})
+
 test('identical, reversed, and shifted loop starts match without normalizing geography', async () => {
   const loop: XY[] = [[0, 0], [400, 0], [400, 200], [100, 500], [0, 0]]
   expect(await matches(route(loop), route(loop))).toBe(true)
