@@ -47,3 +47,10 @@ Report results per activity rather than presenting a partially successful batch 
 - Adopt the upstream example's `GARMINTOKENS` environment variable as a **backend-only token-directory path**, defaulting outside the repository. Use restrictive directory/file permissions, reuse and refresh stored tokens, and prompt again when the session can no longer be restored. Do not require a long-lived password environment variable.
 - Research basis: the upstream repository's `README.md` Authentication section, `example.py` session-loading example, and `garminconnect/__init__.py` activity methods. Verify the concrete identity checks and authentication flow with the pinned version before enabling writes.
 - Automated coverage must use synthetic fixtures and mocked Garmin responses, including partial failures and uncertain writes. Any real-account rename requires explicit user approval; this specification performs no authentication or write-back.
+
+## Superseding decisions (2026-09-17)
+
+- Garmin write-back is a standalone local writer, not an action or backend of the primary website. The hosted GitHub Pages client has no Garmin authentication, credentials, or Garmin requests.
+- The writer accepts only the versioned JSON exported by the website and does not require the original ZIP. Spec 007 evolves that contract to carry the required archive/source identity, Garmin activity ID evidence, recorded start time, activity type, original title, and proposed title.
+- Before changing a title, the writer verifies the claimed activity against remote Garmin identity data, presents the verified changes for review, and requires explicit confirmation. It journals the operation before writing, changes only the title, and reads the remote title back before reporting confirmation.
+- These decisions replace the in-page “Apply to Garmin,” shared live-draft, and original-archive assumptions above. The remaining authentication, conflict, journaling, partial-failure, and read-back safety requirements still apply to the standalone writer.

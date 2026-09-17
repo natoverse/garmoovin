@@ -52,12 +52,14 @@ Derived geometry and bounded pair-score reuse live only in memory for the select
 
 Archive contents are processed in browser memory. There is no login, upload, analytics, external font, or map service. Reloading the page clears the imported activity list, and the source archive remains unchanged.
 
+The planned GitHub Pages deployment remains a static, browser-only viewer: it will not hold Garmin credentials or contact Garmin. Garmin write-back belongs to a separate local writer that consumes a self-contained exported JSON file, verifies remote identity, and requires review and confirmation before changing a title.
+
 Only derived PNG thumbnails and their integrity/identity hashes are persisted in the browser's IndexedDB storage. Names, dates, filenames, coordinates, similarity descriptors/results, and GPX archives are not stored there. Route images can still reveal sensitive locations; clear the thumbnail cache when you no longer want them on this device.
 
 ZIP and GPX files, `garmin-title-mappings*.json` exports (including browser-numbered copies), `local-data/`, build output, and browser-test artifacts are Git-ignored. Keep renamed exports and any other locally generated activity data in `local-data/`. Private exports are also blocked from being served by the localhost app. The build has no public-data directory and includes only the app entry point and its imported assets; private archives must never be imported into application source.
 
 ## Project
 
-The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright. The **Check** GitHub Actions workflow builds, type-checks, and runs that coverage; it does not deploy the app.
+The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright. The **Check** GitHub Actions workflow builds, type-checks, and runs that coverage; it does not currently deploy the app.
 
-See `MANIFESTO.md` for the product direction and specs 001-004 and 006 for the implemented scope.
+Spec 007 defines deployment of Vite's uncommitted `dist` output to the `/garmin-view/` GitHub Pages project path, production-path coverage, and the next self-contained JSON handoff. See `MANIFESTO.md` for the product direction and specs 001-004 and 006 for the implemented scope.
