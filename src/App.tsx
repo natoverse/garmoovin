@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { importArchive, type ImportProgress } from './archive'
+import { importArchive, type ImportedActivity, type ImportProgress } from './archive'
 import { formatDate } from './gpx'
 import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
@@ -168,23 +168,77 @@ export default function App() {
   const hasBlockedChanges = exportErrors.size > 0
   const { groups, analyzing } = useSimilarity(similarity.current, visibleActivities, grouping, tolerance)
   const byId = new Map(grouping ? visibleActivities.map((activity) => [activity.id, activity]) : [])
-  const groupById = new Map(groups.flatMap((group, index) => group.members.map((id) => [id, { group, index }] as const)))
-  const orderedActivities = grouping
-    ? groups.flatMap((group) => group.members.map((id) => byId.get(id)!))
-    : visibleActivities
-  const similarGroupCount = groups.filter((group) => group.members.length > 1).length
-  const ungroupedCount = groups.filter((group) => group.members.length === 1).length
+  const groupById = new Map(groups.flatMap((group) => group.members.map((id) => [id, group] as const)))
+  const bundles = groups.filter((group) => group.members.length > 1)
+  const ungroupedActivities = groups.filter((group) => group.members.length === 1)
+    .map((group) => byId.get(group.members[0]!)!)
+  const similarGroupCount = bundles.length
+  const ungroupedCount = ungroupedActivities.length
   const pendingGeometryCount = activities.filter((activity) => activity.geometry.status === 'pending').length
 
-  function groupLabel(group: SimilarityGroup, index: number, id: string) {
-    if (group.status === 'matched') {
-      const representative = byId.get(group.members[0]!)!
-      return `Suggestion ${index + 1} · ${group.members.length} activities · ${id === representative.id ? 'Representative' : `Representative: ${representative.name}`}`
-    }
+  function groupLabel(group: SimilarityGroup) {
     if (group.status === 'pending') return 'Analysis pending'
     if (group.status === 'missing') return 'No usable route · missing or degenerate geometry'
     if (group.status === 'error') return `Analysis unavailable · ${group.message}`
     return 'Ungrouped · no qualifying group'
+  }
+
+  function renderActivityTable(list: readonly ImportedActivity[], label = 'Scrollable activity list') {
+    return (
+      <div className="table-container" role="region" aria-label={label} tabIndex={0}>
+        <table>
+          <caption className="visually-hidden">{label}. Activities with north-up route previews, newest first. Elevation profiles use independent distance and elevation scales. Dates are in UTC.</caption>
+          <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="elevation-cell">Elevation</th><th scope="col" className="name-heading">Title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
+          <tbody>
+            {list.map((activity) => {
+              const group = groupById.get(activity.id)
+              return (
+                <tr key={activity.id} data-route-group={group?.members[0]}>
+                  <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
+                  <td className="elevation-cell"><ElevationPreview profile={activity.elevation} name={activity.name} /></td>
+                  <td className="activity-details">
+                    <label className="visually-hidden" htmlFor={`activity-title-${activity.id}`}>Title for {activity.name} ({activity.sourceFile})</label>
+                    <input
+                      id={`activity-title-${activity.id}`}
+                      className="activity-name"
+                      title={activity.sourceFile}
+                      type="text"
+                      value={drafts.get(activity.id) ?? activity.name}
+                      onChange={(event) => editTitle(activity.id, event.currentTarget.value === activity.name ? null : event.currentTarget.value)}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.value.trim()) editTitle(activity.id, null)
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) return
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          editTitle(activity.id, null)
+                          event.currentTarget.blur()
+                        } else if (event.key === 'Enter') {
+                          event.preventDefault()
+                          event.currentTarget.blur()
+                        }
+                      }}
+                      placeholder="Activity title"
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-describedby={`title-edit-help${exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile) ? ` identity-error-${activity.id}` : ''}`}
+                    />
+                    {(exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile)) && <p className="field-error" id={`identity-error-${activity.id}`}>{exportErrors.get(activity.sourceFile) ?? `Duplicate GPX path: ${activity.sourceFile}. Renames for this path cannot be exported.`}</p>}
+                    <ElevationStats profile={activity.elevation} />
+                    {group && group.status !== 'matched' && <p className="similarity-status">{groupLabel(group)}</p>}
+                  </td>
+                  <td><span className="type-label">{activity.type}</span></td>
+                  <td className="activity-date">{activity.date === null ? 'Unknown' : (
+                    <time dateTime={new Date(activity.date).toISOString()}>{formatDate(activity.date)}</time>
+                  )}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    )
   }
 
   useEffect(() => {
@@ -291,7 +345,7 @@ export default function App() {
           <input id="route-tolerance" type="range" min="10" max="200" step="10" value={tolerance} aria-valuetext={`${tolerance} metres`} onChange={(event) => setTolerance(Number(event.currentTarget.value))} />
           <p>Suggestions for human review, not proof of the same route. No titles are chosen or changed. Every pair in a group must be within tolerance for 95% of both recorded routes, with a shorter/longer length ratio of at least 80%.</p>
           <p>Routes keep their location, scale, and orientation. Travel direction and loop starting points do not matter. Small detours or nearby parallel paths can match; extra laps or large GPS spikes may not.</p>
-          <p>Groups are rebuilt after filtering. A looser tolerance can rearrange groups, not just merge them. The first member is a representative, not a canonical route or title.</p>
+          <p>Groups are rebuilt after filtering. A looser tolerance can rearrange groups, not just merge them. Matches appear first as expanded bundles. Each heading uses the newest member's imported title, not a preferred or shared title.</p>
           <p>Analysis stays in memory only and is released when you choose another ZIP or leave the page.</p>
           {pendingGeometryCount > 0 && <p aria-live="polite">Preparing route geometry: {pendingGeometryCount} pending.</p>}
         </section>
@@ -326,65 +380,45 @@ export default function App() {
         )}
         <div className="section-heading">
           <h2 id="activities-heading">Activities <span className="count">{visibleActivities.length}</span></h2>
-          <p>{grouping ? 'Grouped by newest representative; members newest first' : 'Newest first'} <span aria-hidden="true">/</span> Dates in UTC</p>
+          <p>{grouping ? 'Matching bundles first; newest first within each bundle and ungrouped list' : 'Newest first'} <span aria-hidden="true">/</span> Dates in UTC</p>
         </div>
         <p className="results-count" aria-live="polite" aria-atomic="true">Showing {visibleActivities.length} of {activities.length} activities</p>
         {grouping && (
           <p className="similarity-count" aria-live="polite" aria-atomic="true">
-            {similarGroupCount} similar route {similarGroupCount === 1 ? 'group' : 'groups'} · {ungroupedCount} ungrouped {ungroupedCount === 1 ? 'activity' : 'activities'}{analyzing ? ' · Analysis pending' : ''}
+            {similarGroupCount} route {similarGroupCount === 1 ? 'bundle' : 'bundles'} · {ungroupedCount} ungrouped {ungroupedCount === 1 ? 'activity' : 'activities'}{analyzing ? ' · Analysis pending' : ''}
           </p>
         )}
         {visibleActivities.length > 0 ? (
-          <div className="table-container" role="region" aria-label="Scrollable activity list" tabIndex={0}>
-            <table>
-              <caption className="visually-hidden">{grouping ? 'Suggested groups ordered by their newest representative, with members newest first; not a globally chronological list.' : 'Activities with north-up route previews, newest first.'} Elevation profiles use independent distance and elevation scales. Dates are in UTC.</caption>
-              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="elevation-cell">Elevation</th><th scope="col" className="name-heading">Title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th>{grouping && <th scope="col">Route suggestion</th>}</tr></thead>
-              <tbody>
-                {orderedActivities.map((activity) => (
-                  <tr key={activity.id} data-route-group={grouping ? groupById.get(activity.id)?.group.members[0] : undefined}>
-                    <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
-                    <td className="elevation-cell"><ElevationPreview profile={activity.elevation} name={activity.name} /></td>
-                    <td className="activity-details">
-                      <label className="visually-hidden" htmlFor={`activity-title-${activity.id}`}>Title for {activity.name} ({activity.sourceFile})</label>
-                      <input
-                        id={`activity-title-${activity.id}`}
-                        className="activity-name"
-                        title={activity.sourceFile}
-                        type="text"
-                        value={drafts.get(activity.id) ?? activity.name}
-                        onChange={(event) => editTitle(activity.id, event.currentTarget.value === activity.name ? null : event.currentTarget.value)}
-                        onBlur={(event) => {
-                          if (!event.currentTarget.value.trim()) editTitle(activity.id, null)
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.nativeEvent.isComposing) return
-                          if (event.key === 'Escape') {
-                            event.preventDefault()
-                            editTitle(activity.id, null)
-                            event.currentTarget.blur()
-                          } else if (event.key === 'Enter') {
-                            event.preventDefault()
-                            event.currentTarget.blur()
-                          }
-                        }}
-                        placeholder="Activity title"
-                        autoComplete="off"
-                        spellCheck={false}
-                        aria-describedby={`title-edit-help${exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile) ? ` identity-error-${activity.id}` : ''}`}
-                      />
-                      {(exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile)) && <p className="field-error" id={`identity-error-${activity.id}`}>{exportErrors.get(activity.sourceFile) ?? `Duplicate GPX path: ${activity.sourceFile}. Renames for this path cannot be exported.`}</p>}
-                      <ElevationStats profile={activity.elevation} />
-                    </td>
-                    <td><span className="type-label">{activity.type}</span></td>
-                    <td className="activity-date">{activity.date === null ? 'Unknown' : (
-                      <time dateTime={new Date(activity.date).toISOString()}>{formatDate(activity.date)}</time>
-                    )}</td>
-                    {grouping && <td className="similarity-status">{groupLabel(groupById.get(activity.id)!.group, groupById.get(activity.id)!.index, activity.id)}</td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          grouping ? (
+            <div className="grouped-activities">
+              {bundles.map((group, index) => {
+                const representative = byId.get(group.members[0]!)!
+                const headingId = `bundle-heading-${representative.id}`
+                return (
+                  <section key={representative.id} className="route-bundle" aria-labelledby={`bundle-label-${representative.id} ${headingId}`}>
+                    <header className="bundle-heading">
+                      <div>
+                        <p id={`bundle-label-${representative.id}`} className="bundle-label">Bundle {index + 1} · Suggested match</p>
+                        <h3 id={headingId}>{representative.name}</h3>
+                        <p className="bundle-description">Title from the newest activity. Review each activity below.</p>
+                      </div>
+                      <span className="count">{group.members.length} activities</span>
+                    </header>
+                    {renderActivityTable(group.members.map((id) => byId.get(id)!), `Scrollable activities in bundle ${index + 1}`)}
+                  </section>
+                )
+              })}
+              {ungroupedCount > 0 && (
+                <section className="ungrouped-activities" aria-labelledby="ungrouped-heading">
+                  <header className="bundle-heading">
+                    <h3 id="ungrouped-heading">Ungrouped activities</h3>
+                    <span className="count">{ungroupedCount} {ungroupedCount === 1 ? 'activity' : 'activities'}</span>
+                  </header>
+                  {renderActivityTable(ungroupedActivities, 'Scrollable ungrouped activities')}
+                </section>
+              )}
+            </div>
+          ) : renderActivityTable(visibleActivities)
         ) : activities.length > 0 ? (
           <div className="empty-state">
             <h3>{selectedTypeCount === 0 ? 'No activity types selected' : 'No activities match your search'}</h3>

@@ -107,15 +107,15 @@ test('starts off, uses an accessible metre slider, and never chains pair matches
   await page.keyboard.press('Space')
   await expectGroups(page, [['Green A', 'Green B'], ['Green C'], ['Far away'], ['No geometry']])
   await expect(page.locator('.results-count')).toHaveText('Showing 5 of 5 activities')
-  await expect(page.locator('.similarity-count')).toHaveText('1 similar route group · 3 ungrouped activities')
+  await expect(page.locator('.similarity-count')).toHaveText('1 route bundle · 3 ungrouped activities')
   await expect(page.locator('.similarity-status')).toHaveText([
-    'Suggestion 1 · 2 activities · Representative',
-    'Suggestion 1 · 2 activities · Representative: Green A',
     'Ungrouped · no qualifying group',
     'Ungrouped · no qualifying group',
     'No usable route · missing or degenerate geometry',
   ])
-  await expect(page.locator('.section-heading')).toContainText('Grouped by newest representative')
+  await expect(page.locator('.route-bundle .bundle-heading h3')).toHaveText('Green A')
+  await expect(page.locator('.route-bundle .count')).toHaveText('2 activities')
+  await expect(page.locator('.section-heading')).toContainText('Matching bundles first')
   await expect(page.locator('.similarity-panel')).toContainText('A looser tolerance can rearrange groups, not just merge them.')
   await tolerance(page).focus()
   await page.keyboard.press('ArrowLeft')
@@ -148,13 +148,141 @@ test('filters before grouping, replaces hidden representatives, and keeps archiv
   await expectGroups(page, [['Green B'], ['Far away'], ['No geometry']])
   await page.getByRole('button', { name: 'Select none', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'No activity types selected' })).toBeVisible()
-  await expect(page.locator('.similarity-count')).toHaveText('0 similar route groups · 0 ungrouped activities')
+  await expect(page.locator('.similarity-count')).toHaveText('0 route bundles · 0 ungrouped activities')
   await page.getByRole('button', { name: 'Select all', exact: true }).click()
   await search(page).fill('.*')
   await expect(page.getByRole('heading', { name: 'No activities match your search' })).toBeVisible()
   await search(page).fill('')
   await expectGroups(page, [['Green A', 'Green B'], ['Green C'], ['Far away'], ['No geometry']])
 })
+
+test('expanded bundles precede newer singletons with clear membership and consecutive numbering', async ({ page }) => {
+  await setup(page, [
+    ['garmin-1.gpx', route('Newest singleton', 2000, 'hiking', 10)],
+    ['garmin-2.gpx', route('Cedar morning', 0, 'hiking', 8)],
+    ['garmin-3.gpx', route('Cedar evening', 4, 'running', 6)],
+    ['garmin-4.gpx', route('Valley morning', 1000, 'hiking', 5)],
+    ['garmin-5.gpx', route('Different imported title', 8, 'hiking', 4)],
+    ['garmin-6.gpx', route('Another repeat', 12, 'hiking', 3)],
+    ['garmin-7.gpx', route('Valley evening', 1004, 'hiking', 2)],
+    ['missing.gpx', gpx('<trk><name>No geometry</name></trk>')],
+  ])
+  await grouping(page).check()
+  await expectGroups(page, [
+    ['Cedar morning', 'Cedar evening', 'Different imported title', 'Another repeat'],
+    ['Valley morning', 'Valley evening'],
+    ['Newest singleton'], ['No geometry'],
+  ])
+  const bundles = page.locator('.route-bundle')
+  await expect(bundles).toHaveCount(2)
+  await expect(bundles.locator('.bundle-label')).toHaveText(['Bundle 1 · Suggested match', 'Bundle 2 · Suggested match'])
+  await expect(bundles.locator('.bundle-heading h3')).toHaveText(['Cedar morning', 'Valley morning'])
+  await expect(bundles.locator('.count')).toHaveText(['4 activities', '2 activities'])
+  await expect(page.getByRole('region', { name: 'Bundle 1 · Suggested match Cedar morning', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Bundle 2 · Suggested match Valley morning', exact: true })).toBeVisible()
+  await expect(bundles.nth(0).locator('tbody tr')).toHaveCount(4)
+  await expect(bundles.nth(1).locator('tbody tr')).toHaveCount(2)
+  await expect(page.locator('.ungrouped-activities tbody tr')).toHaveCount(2)
+  await expect(page.locator('.ungrouped-activities .activity-details .similarity-status')).toHaveText([
+    'Ungrouped · no qualifying group', 'No usable route · missing or degenerate geometry',
+  ])
+  await expect(page.locator('.similarity-count')).toHaveText('2 route bundles · 2 ungrouped activities')
+  await expect(page.locator('.results-count')).toHaveText('Showing 8 of 8 activities')
+  await expect(page.getByRole('columnheader', { name: 'Route suggestion', exact: true })).toHaveCount(0)
+  for (const input of await bundles.getByRole('textbox').all()) {
+    await expect(input).toBeVisible()
+    await expect(input).toBeEditable()
+  }
+  expect(await bundles.evaluateAll((elements) => {
+    const first = elements[0]!.getBoundingClientRect()
+    const second = elements[1]!.getBoundingClientRect()
+    return second.top - first.bottom
+  })).toBeGreaterThanOrEqual(24)
+  await grouping(page).uncheck()
+  await expect(bundles).toHaveCount(0)
+  await expect(page.locator('.ungrouped-activities')).toHaveCount(0)
+  await expect(page.getByRole('table')).toHaveCount(1)
+  await expectActivityNames(page, [
+    'Newest singleton', 'Cedar morning', 'Cedar evening', 'Valley morning',
+    'Different imported title', 'Another repeat', 'Valley evening', 'No geometry',
+  ])
+})
+
+test('bundle headings follow filtered representatives, not drafts, without interrupting in-place typing', async ({ page }) => {
+  await setup(page, [
+    ['garmin-1.gpx', route('Latest original', 0, 'running', 3)],
+    ['garmin-2.gpx', route('Earlier original', 10, 'hiking', 2)],
+    ['garmin-3.gpx', route('Oldest original', 20, 'hiking', 1)],
+  ])
+  await grouping(page).check()
+  await expectGroups(page, [['Latest original', 'Earlier original', 'Oldest original']])
+  await expect(page.locator('.ungrouped-activities')).toHaveCount(0)
+  const title = page.getByRole('textbox', { name: 'Title for Latest original (garmin-1.gpx)', exact: true })
+  await title.fill('')
+  await title.pressSequentially('My edited title')
+  await expect(title).toBeFocused()
+  await expect(title).toHaveValue('My edited title')
+  await expect(page.locator('.bundle-heading h3')).toHaveText('Latest original')
+  await title.press('Enter')
+  await expect(title).not.toBeFocused()
+  await page.getByRole('button', { name: 'Running', exact: true }).click()
+  await expectGroups(page, [['Earlier original', 'Oldest original']])
+  await expect(page.locator('.route-bundle .bundle-heading h3')).toHaveText('Earlier original')
+  await expect(page.locator('.route-bundle .bundle-label')).toHaveText('Bundle 1 · Suggested match')
+  await expect(page.locator('.route-bundle .count')).toHaveText('2 activities')
+  await page.getByRole('button', { name: 'Running', exact: true }).click()
+  await expectGroups(page, [['My edited title', 'Earlier original', 'Oldest original']])
+  await expect(title).toHaveValue('My edited title')
+  await expect(page.locator('.bundle-heading h3')).toHaveText('Latest original')
+  await search(page).fill('latest')
+  await expectGroups(page, [['My edited title']])
+  await expect(page.locator('.route-bundle')).toHaveCount(0)
+  await expect(page.locator('.ungrouped-activities tbody tr')).toHaveCount(1)
+  await search(page).fill('no matches')
+  await expect(page.locator('.route-bundle, .ungrouped-activities')).toHaveCount(0)
+})
+
+for (const width of [320, 600, 601, 1440]) {
+  test(`bundle headers fit and member previews remain equally sized and reachable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    const longTitle = `Long imported route title ${'X'.repeat(180)}`
+    await setup(page, [
+      ['garmin-1.gpx', route(longTitle, 0, 'hiking', 3)],
+      ['garmin-2.gpx', route('Earlier repeat', 5, 'hiking', 2)],
+      ['garmin-3.gpx', route('Newer singleton', 2000, 'hiking', 4)],
+    ])
+    await grouping(page).check()
+    await expectGroups(page, [[longTitle, 'Earlier repeat'], ['Newer singleton']])
+    const bundle = page.locator('.route-bundle')
+    const heading = bundle.locator('.bundle-heading')
+    await expect(heading.getByRole('heading')).toHaveText(longTitle)
+    expect(await heading.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await expect(bundle).toHaveCSS('border-top-width', '2px')
+    await expect(bundle).toHaveCSS('border-top-color', 'rgb(94, 122, 112)')
+    const size = width <= 600 ? [90, 60] : [120, 80]
+    expect(await page.locator('.route-preview, .elevation-preview').evaluateAll((elements) =>
+      elements.map((element) => {
+        const { width, height } = element.getBoundingClientRect()
+        return [width, height]
+      }),
+    )).toEqual(Array.from({ length: 6 }, () => size))
+    const tableRegion = page.getByRole('region', { name: 'Scrollable activities in bundle 1', exact: true })
+    await tableRegion.focus()
+    await expect(tableRegion).toBeFocused()
+    const before = await heading.boundingBox()
+    await tableRegion.evaluate((element) => { element.scrollLeft = element.scrollWidth })
+    expect(await heading.boundingBox()).toEqual(before)
+    const title = bundle.getByRole('textbox').first()
+    await title.focus()
+    await expect(title).toBeFocused()
+    await expect(title).toBeInViewport()
+    const elevation = bundle.locator('.elevation-preview').first()
+    await elevation.scrollIntoViewIfNeeded()
+    await expect(elevation).toBeInViewport()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
+}
 
 test('grouped ordering uses representatives, source-path ties and unknown dates; filtering chooses a new representative', async ({ page }) => {
   await setup(page, [

@@ -165,7 +165,7 @@ test('profiles follow duplicate-name activities through drafts, filters, groupin
   const drafts = page.getByRole('textbox', { name: 'Title for Same name (garmin-1.gpx)', exact: true })
   await drafts.fill('Keep this proposal')
   await page.getByRole('checkbox', { name: 'Group similar routes' }).check()
-  await expect(page.locator('.similarity-count')).toContainText('1 similar route group')
+  await expect(page.locator('.similarity-count')).toContainText('1 route bundle')
   await expect(page.locator('.similarity-count')).not.toContainText('Analysis pending')
   await page.getByRole('searchbox').fill('same')
   await page.getByRole('button', { name: 'Hiking', exact: true }).click()
