@@ -110,6 +110,7 @@ export default function App() {
     }
     const snapshot = changes
     const snapshotSignature = changesSignature
+    const cacheGeneration = cache.generation
     setSaving(true)
     setExportNotice(null)
     try {
@@ -120,8 +121,19 @@ export default function App() {
       const url = requestTitleMappingDownload(mapping)
       if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current)
       downloadUrl.current = url
+      const remembered = await cache.writeTitles(
+        new Map(mapping.changes.map((change) => [change.garminActivityId, change.newTitle])),
+        cacheGeneration,
+      )
       setLastExportSignature(snapshotSignature)
-      setExportNotice({ error: false, message: `JSON download requested for ${snapshot.length} ${snapshot.length === 1 ? 'rename' : 'renames'}. Check your browser's downloads; no changes were sent to Garmin.` })
+      setExportNotice({
+        error: !remembered,
+        message: `JSON download requested for ${snapshot.length} ${snapshot.length === 1 ? 'rename' : 'renames'}. Check your browser's downloads; no changes were sent to Garmin. ${
+          remembered
+            ? 'Exported titles will be the starting titles on your next load.'
+            : 'Some exported titles could not be remembered for your next load.'
+        }`,
+      })
     } catch (error) {
       setExportNotice({ error: true, message: `Could not create JSON export. ${error instanceof Error ? error.message : 'Please try again.'}` })
     } finally {
@@ -282,7 +294,7 @@ export default function App() {
           <h2 id="import-heading">Open your Garmin archive</h2>
           <p>Select a GPX ZIP to browse routes, elevation profiles, activity names, types, and recorded dates.</p>
           <p className="privacy-note">Read in your browser. Nothing uploaded, no Garmin login.</p>
-          <p className="privacy-note">Activity metadata, route images, elevation profiles, and location-bearing comparison data are cached on this device. Source files and title drafts are not saved.</p>
+          <p className="privacy-note">Activity metadata, including titles from Save JSON, route images, elevation profiles, and location-bearing comparison data are cached on this device. Source files and unsaved title drafts are not saved.</p>
         </div>
         <label className="file-picker">
           <span>{state.phase === 'idle' ? 'Open GPX ZIP' : 'Choose another ZIP'}</span>
@@ -298,7 +310,7 @@ export default function App() {
           {clearingCache ? 'Clearing cache...' : 'Clear activity cache'}
         </button>
       </div>
-      <p className="cache-help">Cached activities are reused by Garmin ID. After changing GPX data or re-exporting renamed activities, clear the activity cache and reopen the archive to see those changes.</p>
+      <p className="cache-help">Cached activities are reused by Garmin ID. Save JSON remembers the exported titles for your next load; unsaved drafts are not stored. Clear the cache and reopen the archive to read titles changed elsewhere or updated GPX data.</p>
       {progress && (
         <p className="cache-summary"
           data-extracted={progress.extracted}

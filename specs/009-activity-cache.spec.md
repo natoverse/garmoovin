@@ -2,7 +2,7 @@
 
 > Pay for activity processing once, then reopen the archive quickly for another small batch of route-based renames.
 
-**Status:** Implemented on the feature branch following design approval in PR #13; awaiting implementation PR review.
+**Status:** Implemented in PR #14 following design approval in PR #13. Saved-title follow-up implemented for PR review.
 
 ## What
 
@@ -18,7 +18,9 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 - [x] Reuse an ID across reloads, overlapping archives, and changed containing folders. Only entries in the currently selected ZIP appear; cached activities absent from it must not leak into the list.
 - [x] A complete cache hit restores imported metadata, thumbnail, elevation profile, and prepared similarity geometry without extracting/decompressing that GPX entry, parsing its XML, hashing/projecting its route, simplifying/sampling geometry, or regenerating either preview.
 - [x] Cache misses use the existing processing behavior and populate the cache. A mixed archive processes only new or uncached entries; existing entries take the warm path. Entries without a usable Garmin ID remain browsable through an uncached path.
-- [x] Same-ID source changes deliberately reuse the cached result until the user clears it. This includes changed coordinates, elevations, and imported titles. Explain that re-exporting renamed activities also requires clearing the cache if their new names should appear.
+- [x] Same-ID source changes deliberately reuse the cached result until the user clears it. Coordinates, elevations, and titles changed elsewhere require clearing. Save JSON updates the cached titles for its exported activities without invalidating their recorded data.
+- [x] After a JSON download is requested, remember only its captured, trimmed exported titles by activity ID. On the next import, use them as starting titles rather than pending edits. Preserve current-session originals and drafts; unsaved edits and failed exports must not change cached titles.
+- [x] Wait for title-storage completion before reporting titles remembered. Missing complete cache records or storage failures visibly warn without blocking the JSON download. Clearing during a save prevents it from repopulating the cache.
 - [x] Preserve each selected entry's current full source path and unique per-import row identity. Cached metadata must not replace them. Duplicate entries remain separate rows; existing duplicate-path/target checks still block ambiguous JSON exports.
 - [x] Persist completed pairwise distance scores by the unordered pair of Garmin IDs. A repeat comparison reuses its score across reloads and tolerance changes. Do not cache tolerance-specific match booleans as reusable distances.
 - [x] Rebuild bundle membership for the current name/type filters, ordering, and tolerance using cached scores where available. Do not persist final groups. Keep D95, the 80% length guard, all-member matching, and the expanded matches-first bundle presentation unchanged.
@@ -27,7 +29,7 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 - [x] Cache normal missing-route/no-elevation outcomes. Do not persist pending states or transient processing failures as permanent results. Unreadable/incompatible cache records are reported and rebuilt; storage failures show a warning while allowing uncached use.
 - [x] Show how many activities were restored from cache versus processed. Preserve loading progress, skipped-file explanations, cancellation, filtering, and responsive controls; do not label a slow cold path as a cache hit.
 - [x] Retain the JSON schema, export validation, draft-discard safeguards, and CLI trust boundary. Compute the selected ZIP's required fingerprint on demand for export, not during import or cache lookup. Cache reuse is not remote Garmin identity verification.
-- [x] Document the expanded local-storage boundary: activity IDs, imported names/types/dates, route images, elevation profiles, location-bearing similarity geometry, and pair scores persist on this browser profile. No uploads, Garmin access, raw ZIP/GPX persistence, title-draft persistence, or automatic reopening of an old archive.
+- [x] Document the expanded local-storage boundary: activity IDs, starting titles/types/dates, route images, elevation profiles, location-bearing similarity geometry, and pair scores persist on this browser profile. Starting titles initially come from GPX and are updated by Save JSON. No uploads, Garmin access, raw ZIP/GPX persistence, unsaved-draft persistence, or automatic reopening of an old archive.
 
 ## Performance Acceptance
 
@@ -54,7 +56,7 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 
 ## Decisions
 
-- Cache metadata as well as pictures and geometry: otherwise every reload still parses every GPX before it can display a usable activity. The tradeoff for review is that imported names can remain stale until explicit clearing, just like route data.
+- Cache metadata as well as pictures and geometry: otherwise every reload still parses every GPX before it can display a usable activity. The original design kept titles unchanged until clearing; the saved-title decisions below supersede that restriction for titles exported through this app.
 - Manual clearing handles changes to source data. A single cache-format version may invalidate stored records when application changes make their representation or meaning incompatible; ordinary deployments must not discard a compatible cache.
 - Use the project's existing `specs/` format and `MANIFESTO.md` principles. This work does not introduce a new specification framework or modify the deployed app in the design PR.
 - On implementation, this spec supersedes the content-key/freshness requirement in spec 002 and the session-only metadata/profile/similarity persistence restrictions in specs 001, 006, and 008. Unrelated geometry, privacy-from-servers, export, and writer safeguards remain.
@@ -68,3 +70,11 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 - Validate the cached record/PNG and bounded spatial representation without comparing source content. Restore the existing tree and typed samples; do not rebuild geometry. Capacity failures retain a visible activity error without retrying GPX preparation.
 - Cache counters expose restored/processed entries plus extraction, geometry-preparation/restoration, and distance-comparison counts for the browser regressions. Warm grouping still performs cheap length/bounds checks; those are not fresh directed-distance calculations.
 - The synthetic 500-activity cold/warm test exercises the actual persisted path, including committed pair scores, with hard 5-second import and 2-second regrouping thresholds. Private examples were also checked locally; their contents and benchmark artifacts are not included in source control.
+
+## Saved-title iteration decisions (2026-09-17)
+
+- Keep the parse-free warm import. The user chose remembering titles at Save JSON rather than rereading GPX titles on every reload. Clicking Save JSON is the persistence boundary; typing, Enter, and blur are not.
+- Update only existing complete activity records' `metadata.name`, using the validated export snapshot's IDs and trimmed titles, including hidden rows. Keep database version 1, previews, type/date, prepared geometry, and pair scores unchanged. Do not add a title-only store or partial activity records for uncached/failed activities; report those titles as not remembered.
+- Request the JSON download first. If export validation, hashing, or requesting the download fails, do not update cached titles. A cache write failure must not misreport the already-requested download as failed. Capture the cache generation at click time so clearing also invalidates pending title writes.
+- Within the current import, keep originals and drafts stable for repeat exports and unsaved-change warnings. On the next import, the last exported title becomes the baseline for editing, search, bundle labels, accessible labels, and JSON `originalTitle`; it is not another pending proposal.
+- Remembered titles assume the user applies the downloaded JSON with the CLI. They do not verify a disk save, remote Garmin state, or a completed rename. Titles changed elsewhere still require clearing/reimporting. Clearing also removes remembered titles and restores GPX names on the next import.

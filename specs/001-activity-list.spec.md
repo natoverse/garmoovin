@@ -49,7 +49,7 @@ This is the first step toward the route-first gallery described in `MANIFESTO.md
 
 ## Activity-ID caching revision (spec 009)
 
-- Spec 009 supersedes the session-only metadata restriction: complete cached activities restore imported names/types/dates by Garmin ID without parsing GPX again. Current ZIP membership, source paths, and per-import row identities still come from the newly selected archive. Changed imported metadata is intentionally stale until manual clearing. Source archives and title drafts remain unpersisted.
+- Spec 009 supersedes the session-only metadata restriction: complete cached activities restore starting titles/types/dates by Garmin ID without parsing GPX again. Save JSON updates cached titles for the next import; current-session originals remain unchanged. Current ZIP membership, source paths, and per-import row identities still come from the newly selected archive. Metadata changed elsewhere remains stale until manual clearing. Source archives and unsaved title drafts remain unpersisted.
 
 ## Garmin Connect link iteration (2026-09-17)
 

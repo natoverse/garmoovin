@@ -58,3 +58,9 @@ For this stage, the app runs on localhost. No deployment, Garmin authentication,
 - Preserve imported names internally for identity evidence, original-title search, grouping labels, and JSON `originalTitle`. The editor shows the draft when present without rewriting imported metadata; filtering must not remove a row as its title is being edited.
 - Blank values can exist while typing but never export. Leaving a blank/whitespace-only field restores its imported title; Escape discards that activity's draft and restores the imported title, and Enter leaves the editor. Ignore Enter/Escape handling during IME composition. Returning to the exact imported title removes the draft.
 - Keep existing trimming, export snapshots, hidden-row proposals, duplicate-name isolation, and navigation/archive-replacement safeguards. These decisions supersede the original two-field presentation, not the schema-v2 export contract established by spec 007.
+
+## Saved-title iteration decisions (2026-09-17)
+
+- Save JSON also remembers the captured, trimmed exported titles in the activity-ID cache specified by spec 009, after requesting the download. Only exported changes persist; unsaved drafts and failed exports do not.
+- On the next import, remembered titles are starting titles, not pending edits, and supply JSON `originalTitle` for subsequent renames. Current-session originals, drafts, complete export snapshots, and discard warnings remain unchanged.
+- Preserve previews and comparison caches, with no warm GPX parsing. Report failed title persistence separately from the JSON download; clearing during save must not repopulate the cache. Remembering a title does not confirm a disk save or a Garmin update.
