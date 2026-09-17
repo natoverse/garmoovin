@@ -1,16 +1,17 @@
 import { memo } from 'react'
-import { ELEVATION_FRAME, formatProfileValue, type ElevationProfile } from './elevation'
+import { ELEVATION_FRAME, type ElevationProfile } from './elevation'
+import { formatFeet, formatMiles } from './units'
 
 function profileLabels(profile: Extract<ElevationProfile, { status: 'ready' }>) {
-  let minimum = formatProfileValue(profile.minElevation)
-  let maximum = formatProfileValue(profile.maxElevation)
+  let minimum = formatFeet(profile.minElevation)
+  let maximum = formatFeet(profile.maxElevation)
   if (minimum === maximum && profile.minElevation !== profile.maxElevation) {
-    minimum = profile.minElevation.toString()
-    maximum = profile.maxElevation.toString()
+    minimum = formatFeet(profile.minElevation, true)
+    maximum = formatFeet(profile.maxElevation, true)
   }
   return {
-    range: `${minimum} to ${maximum} m`,
-    distance: `0 to ${formatProfileValue(profile.distance / 1000)} km`,
+    range: `${minimum} to ${maximum} ft`,
+    distance: `0 to ${formatMiles(profile.distance)} mi`,
   }
 }
 

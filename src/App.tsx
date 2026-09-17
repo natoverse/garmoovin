@@ -8,6 +8,7 @@ import { SimilaritySession, type SimilarityGroup } from './similarity'
 import { ActivityCache } from './activity-cache'
 import { candidateActivityId, createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
 import { useSimilarity } from './use-similarity'
+import { formatFeet } from './units'
 import logo from './assets/groomin-logo.jpg'
 import './theme.css'
 import './App.css'
@@ -293,7 +294,7 @@ export default function App() {
       {state.phase !== 'idle' && <p className="archive-name">Archive: <strong>{state.archiveName}</strong></p>}
 
       <div className="thumbnail-controls">
-        <p>North-up route previews and recorded elevation in meters over distance in kilometers. Each preview fits its own frame; scales differ.</p>
+        <p>North-up route previews and recorded elevation in feet over distance in miles. Each preview fits its own frame; scales differ.</p>
         <button type="button" className="secondary-button" disabled={clearingCache} onClick={clearCache}>
           {clearingCache ? 'Clearing cache...' : 'Clear activity cache'}
         </button>
@@ -365,8 +366,8 @@ export default function App() {
             <input type="checkbox" checked={grouping} onChange={(event) => setGrouping(event.currentTarget.checked)} />
             Group similar routes
           </label>
-          <label htmlFor="route-tolerance">Route tolerance: <span>{tolerance} m</span> — lower is stricter</label>
-          <input id="route-tolerance" type="range" min="10" max="200" step="10" value={tolerance} aria-valuetext={`${tolerance} metres`} onChange={(event) => setTolerance(Number(event.currentTarget.value))} />
+          <label htmlFor="route-tolerance">Route tolerance: <span>{formatFeet(tolerance)} ft</span> — lower is stricter</label>
+          <input id="route-tolerance" type="range" min="10" max="200" step="10" value={tolerance} aria-valuetext={`${formatFeet(tolerance)} feet`} onChange={(event) => setTolerance(Number(event.currentTarget.value))} />
           <p>Suggestions for human review, not proof of the same route. No titles are chosen or changed. Every pair in a group must be within tolerance for 95% of both recorded routes, with a shorter/longer length ratio of at least 80%.</p>
           <p>Routes keep their location, scale, and orientation. Travel direction and loop starting points do not matter. Small detours or nearby parallel paths can match; extra laps or large GPS spikes may not.</p>
           <p>Groups are rebuilt after filtering. A looser tolerance can rearrange groups, not just merge them. Matches appear first as expanded bundles. Each heading uses the newest member's imported title, not a preferred or shared title.</p>

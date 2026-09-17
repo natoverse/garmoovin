@@ -1,5 +1,6 @@
 import { compareActivities, type Activity } from './gpx'
 import { digest, type Coordinate, type Route } from './route'
+import { formatFeet, formatMiles } from './units'
 
 const EARTH_RADIUS = 6_371_008.8
 const VERSION = 'spherical-lines-v3:rdp5:sample10:d95:length80'
@@ -585,7 +586,7 @@ export class SimilaritySession {
         length += pathLength
         const samples = Math.ceil(pathLength / SAMPLE_METRES)
         sampleCount += samples
-        limit(length > SIMILARITY_LIMITS.lengthMetres, `more than ${SIMILARITY_LIMITS.lengthMetres} recorded metres.`)
+        limit(length > SIMILARITY_LIMITS.lengthMetres, `more than ${formatMiles(SIMILARITY_LIMITS.lengthMetres)} recorded miles.`)
         limit(sampleCount > SIMILARITY_LIMITS.samples, `more than ${SIMILARITY_LIMITS.samples} length samples.`)
         paths.push({ lines: path, length: pathLength, samples })
       }
@@ -741,7 +742,7 @@ export class SimilaritySession {
     const work = new Work(signal, this.lifetime.signal, SIMILARITY_LIMITS.groupingWork)
     work.check()
     if (!Number.isFinite(tolerance) || tolerance < 10 || tolerance > 200) {
-      throw new Error('Route similarity tolerance must be between 10 and 200 metres.')
+      throw new Error(`Route similarity tolerance must be between ${formatFeet(10)} and ${formatFeet(200)} feet.`)
     }
     limit(activities.length > SIMILARITY_LIMITS.activities, `more than ${SIMILARITY_LIMITS.activities} visible activities.`)
     await work.pause()

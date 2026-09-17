@@ -57,7 +57,7 @@ async function setTolerance(page: Page, value: number) {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, String(next))
     slider.dispatchEvent(new Event('input', { bubbles: true }))
   }, value)
-  await expect(tolerance(page)).toHaveAttribute('aria-valuetext', `${value} metres`)
+  await expect(tolerance(page)).toHaveAttribute('aria-valuetext', `${Number((value / 0.3048).toFixed(2))} feet`)
 }
 
 async function installProbe(page: Page) {
@@ -96,13 +96,15 @@ async function releaseTimers(page: Page) {
   })
 }
 
-test('starts off, uses an accessible metre slider, and never chains pair matches into a group', async ({ page }) => {
+test('starts off, displays an accessible feet slider without changing matching, and never chains pair matches into a group', async ({ page }) => {
   await setup(page)
   await expect(grouping(page)).not.toBeChecked()
   await expect(tolerance(page)).toHaveValue('50')
   await expect(tolerance(page)).toHaveAttribute('min', '10')
   await expect(tolerance(page)).toHaveAttribute('max', '200')
   await expect(tolerance(page)).toHaveAttribute('step', '10')
+  await expect(tolerance(page)).toHaveAttribute('aria-valuetext', '164.04 feet')
+  await expect(page.locator('label[for="route-tolerance"]')).toHaveText('Route tolerance: 164.04 ft — lower is stricter')
   await grouping(page).focus()
   await page.keyboard.press('Space')
   await expectGroups(page, [['Green A', 'Green B'], ['Green C'], ['Far away'], ['No geometry']])
@@ -124,11 +126,14 @@ test('starts off, uses an accessible metre slider, and never chains pair matches
   await tolerance(page).focus()
   await page.keyboard.press('ArrowLeft')
   await expect(tolerance(page)).toHaveValue('40')
+  await expect(tolerance(page)).toHaveAttribute('aria-valuetext', '131.23 feet')
   await page.keyboard.press('Home')
   await expect(tolerance(page)).toHaveValue('10')
+  await expect(tolerance(page)).toHaveAttribute('aria-valuetext', '32.81 feet')
   await expectGroups(page, files.map(([, contents]) => [/<name>(.*?)<\/name>/.exec(contents)![1]!]))
   await page.keyboard.press('End')
   await expect(tolerance(page)).toHaveValue('200')
+  await expect(tolerance(page)).toHaveAttribute('aria-valuetext', '656.17 feet')
   await expectGroups(page, [['Green A', 'Green B', 'Green C'], ['Far away'], ['No geometry']])
   await grouping(page).uncheck()
   await expectActivityNames(page, ['Green A', 'Green B', 'Green C', 'Far away', 'No geometry'])

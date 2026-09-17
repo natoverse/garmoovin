@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-const point = (lon: number, elevation: string | null, lat = '0') =>
+const point = (lon: number | string, elevation: string | null, lat = '0') =>
   `<trkpt lat="${lat}" lon="${lon}">${elevation === null ? '' : `<ele>${elevation}</ele>`}<time>2025-01-01T00:00:00Z</time></trkpt>`
 const route = (name = 'Recorded hills', elevations = ['-10', '30', '0'], type = 'hiking') =>
   gpx(`<trk><name>${name}</name><type>${type}</type><trkseg>${elevations.map((value, i) => point(i * 0.001, value)).join('')}</trkseg></trk>`)
@@ -84,20 +84,38 @@ test('places a labeled recorded profile beside each route with separate missing 
   await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Elevation', 'Title', 'Type', 'Date (UTC)'])
   await expect(profilePath(page, 'hills.gpx')).toHaveAttribute('d', 'M3.00,61.00 L90.00,3.00 L177.00,46.50')
   await expect(profilePath(page, 'hills.gpx')).toHaveCSS('stroke', 'rgb(94, 122, 112)')
-  await expect(row(page, 'hills.gpx').getByRole('img', { name: 'Elevation profile for Recorded hills: -10 to 30 m over 0 to 0.22 km' })).toBeVisible()
+  await expect(row(page, 'hills.gpx').getByRole('img', { name: 'Elevation profile for Recorded hills: -32.81 to 98.43 ft over 0 to 0.14 mi' })).toBeVisible()
   await expect(profilePath(page, 'flat.gpx')).toHaveAttribute('d', 'M3.00,32.00 L177.00,32.00')
-  await expect(row(page, 'flat.gpx').locator('.elevation-range')).toHaveText('-5 to -5 m')
-  await expect(row(page, 'small-range.gpx').locator('.elevation-range')).toHaveText('100.001 to 100.002 m')
+  await expect(row(page, 'flat.gpx').locator('.elevation-range')).toHaveText('-16.4 to -16.4 ft')
+  await expect(row(page, 'small-range.gpx').locator('.elevation-range')).toHaveText('328.08727034120733 to 328.09055118110234 ft')
   for (const file of ['no-elevation.gpx', 'no-route.gpx', 'stationary.gpx']) {
     await expect(row(page, file).locator('.elevation-preview')).toHaveText('No elevation data')
   }
   await expect(row(page, 'no-elevation.gpx').getByRole('img', { name: 'Route preview for No measurements' })).toBeVisible()
   await expect(row(page, 'no-route.gpx').locator('.route-preview')).toHaveText('No route')
   await expectMatchingPreviews(page)
-  await expect(row(page, 'hills.gpx').locator('.activity-details .elevation-range')).toHaveText('-10 to 30 m')
-  await expect(row(page, 'hills.gpx').locator('.activity-details .elevation-distance')).toHaveText('0 to 0.22 km')
+  await expect(row(page, 'hills.gpx').locator('.activity-details .elevation-range')).toHaveText('-32.81 to 98.43 ft')
+  await expect(row(page, 'hills.gpx').locator('.activity-details .elevation-distance')).toHaveText('0 to 0.14 mi')
+  await expect(page.getByText('North-up route previews and recorded elevation in feet over distance in miles.', { exact: false })).toBeVisible()
   await expect(page.locator('.elevation-preview .activity-stats, .elevation-preview .elevation-range, .elevation-preview .elevation-distance')).toHaveCount(0)
   await expect(row(page, 'no-elevation.gpx').locator('.activity-stats')).toHaveCount(0)
+})
+
+test('displays mile-scale distances and finite extreme elevations in imperial units', async ({ page }) => {
+  await page.goto('./')
+  const mileLongitude = 1609.344 / 6_371_008.8 * 180 / Math.PI
+  const extreme = `1${'0'.repeat(308)}`
+  await selectZip(page, await zip([
+    ['mile.gpx', gpx(`<trk><name>One mile</name><trkseg>${point(0, '0')}${point(mileLongitude, '1609.344')}</trkseg></trk>`)],
+    ['extreme.gpx', route('Extreme elevations', [`-${extreme}`, extreme])],
+    ['tiny.gpx', gpx(`<trk><name>Tiny distance</name><trkseg>${point(0, '0')}${point((mileLongitude / 1_000_000).toFixed(14), '0')}</trkseg></trk>`)],
+  ]))
+  await expectLoaded(page, 3)
+  await expect(row(page, 'mile.gpx').locator('.elevation-range')).toHaveText('0 to 5280 ft')
+  await expect(row(page, 'mile.gpx').locator('.elevation-distance')).toHaveText('0 to 1 mi')
+  await expect(row(page, 'extreme.gpx').getByRole('img', { name: 'Elevation profile for Extreme elevations: -3.28e+308 to 3.28e+308 ft over 0 to 0.07 mi' })).toBeVisible()
+  await expect(row(page, 'tiny.gpx').locator('.elevation-range')).toHaveText('0 to 0 ft')
+  await expect(row(page, 'tiny.gpx').locator('.elevation-distance')).toHaveText('0 to 1.00e-6 mi')
 })
 
 test('parsing preserves boundaries, elevation gaps, and duplicate positions without changing route geometry', async ({ page }) => {
@@ -116,7 +134,7 @@ test('parsing preserves boundaries, elevation gaps, and duplicate positions with
   expect(path?.match(/L/g)).toHaveLength(5)
   const xs = path!.split(' ').map((command) => Number(command.slice(1).split(',')[0]))
   expect(xs).toEqual([3, 32, 61, 90, 90, 119, 119, 148, 148, 177])
-  await expect(page.locator('.elevation-distance')).toHaveText('0 to 0.67 km')
+  await expect(page.locator('.elevation-distance')).toHaveText('0 to 0.41 mi')
   await expect(page.locator('.elevation-gap')).toHaveText('Partial data / gaps')
   await expect(page.getByRole('img', { name: 'Route preview for Disconnected' })).toBeVisible()
 })
@@ -145,7 +163,7 @@ test('accepts GPX namespaces and only finite decimal elevations from the trackpo
     await expect(row(page, `gap-${index}.gpx`).locator('.elevation-gap')).toBeVisible()
   }
   for (let index = 0; index < 3; index++) {
-    await expect(row(page, `namespace-${index}.gpx`).locator('.elevation-range')).toHaveText('-0.5 to 0 m')
+    await expect(row(page, `namespace-${index}.gpx`).locator('.elevation-range')).toHaveText('-1.64 to 0 ft')
   }
   await expect(row(page, 'foreign.gpx').locator('.elevation-preview')).toHaveText('No elevation data')
 })
@@ -167,6 +185,9 @@ test('profiles follow duplicate-name activities through drafts, filters, groupin
   await page.getByRole('checkbox', { name: 'Group similar routes' }).check()
   await expect(page.locator('.similarity-count')).toContainText('1 route bundle')
   await expect(page.locator('.similarity-count')).not.toContainText('Analysis pending')
+  await expect(row(page, 'garmin-1.gpx').locator('.elevation-range')).toHaveText('-32.81 to 98.43 ft')
+  await expect(row(page, 'garmin-1.gpx').locator('.elevation-distance')).toHaveText('0 to 0.14 mi')
+  await expect(row(page, 'garmin-2.gpx').getByRole('img', { name: 'Elevation profile for Same name: 32.81 to 32.81 ft over 0 to 0.14 mi' })).toBeVisible()
   await page.getByRole('searchbox').fill('same')
   await page.getByRole('button', { name: 'Hiking', exact: true }).click()
   await expect(page.locator('tbody tr')).toHaveCount(1)
@@ -188,8 +209,8 @@ test('profiles follow duplicate-name activities through drafts, filters, groupin
   await expect(profilePath(page, 'garmin-1.gpx')).toHaveAttribute('d', first!)
   await expect(profilePath(page, 'garmin-2.gpx')).toHaveAttribute('d', second!)
   await expect(drafts).toHaveValue('Keep this proposal')
-  await expect(row(page, 'garmin-1.gpx').locator('.activity-details .elevation-range')).toHaveText('-10 to 30 m')
-  await expect(row(page, 'garmin-2.gpx').locator('.activity-details .elevation-range')).toHaveText('10 to 10 m')
+  await expect(row(page, 'garmin-1.gpx').locator('.activity-details .elevation-range')).toHaveText('-32.81 to 98.43 ft')
+  await expect(row(page, 'garmin-2.gpx').locator('.activity-details .elevation-range')).toHaveText('32.81 to 32.81 ft')
   await page.getByRole('searchbox').fill('Elevation:')
   await expect(page.locator('tbody tr')).toHaveCount(0)
   await page.getByRole('searchbox').fill('same')
@@ -203,6 +224,22 @@ test('cached profiles remain until clearing; processing and storage failures kee
   await selectZip(page, await zip([['garmin-1.gpx', route()]]))
   await expectLoaded(page, 1)
   expect(await page.evaluate(() => window.elevationProbe.renders)).toBe(1)
+  expect(await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('groomin-activities')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    try {
+      return await new Promise((resolve, reject) => {
+        const request = database.transaction('activities').objectStore('activities').getAll()
+        request.onsuccess = () => resolve(request.result[0].elevation)
+        request.onerror = () => reject(request.error)
+      })
+    } finally {
+      database.close()
+    }
+  })).toMatchObject({ minElevation: -10, maxElevation: 30, distance: expect.closeTo(222.39016, 4) })
   await page.reload()
   await expect(page.locator('tbody tr')).toHaveCount(0)
   const requests: string[] = []
@@ -211,7 +248,9 @@ test('cached profiles remain until clearing; processing and storage failures kee
   await selectZip(page, changed)
   await expectLoaded(page, 1)
   expect(await page.evaluate(() => window.elevationProbe.renders)).toBe(0)
-  await expect(page.locator('.elevation-range')).toHaveText('-10 to 30 m')
+  expect(await page.evaluate(() => window.elevationProbe.parses)).toBe(0)
+  await expect(page.locator('.elevation-range')).toHaveText('-32.81 to 98.43 ft')
+  await expect(page.locator('.elevation-distance')).toHaveText('0 to 0.14 mi')
   const path = await profilePath(page, 'garmin-1.gpx').getAttribute('d')
   await page.getByRole('button', { name: 'Clear activity cache' }).click()
   await expect(page.locator('.cache-notice')).toContainText('Activity cache cleared')
@@ -224,7 +263,7 @@ test('cached profiles remain until clearing; processing and storage failures kee
   await expectLoaded(page, 1)
   await expect(page.locator('.route-preview')).toHaveText('Thumbnail unavailable')
   await expect(page.locator('.cache-warning')).toContainText('Synthetic storage failure')
-  await expect(page.locator('.elevation-range')).toHaveText('0 to 100 m')
+  await expect(page.locator('.elevation-range')).toHaveText('0 to 328.08 ft')
   await expect(profilePath(page, 'garmin-1.gpx')).not.toHaveAttribute('d', path!)
   expect(requests).toEqual([])
   expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0)

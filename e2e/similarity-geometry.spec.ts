@@ -383,13 +383,13 @@ test('oversized geometry and ambiguous geography fail explicitly without truncat
     status: 'error', message: expect.stringContaining('antipodal'),
   })
   expect(await session.prepare(line(0, SIMILARITY_LIMITS.lengthMetres + 1000), signal())).toMatchObject({
-    status: 'error', message: expect.stringContaining('not truncated'),
+    status: 'error', message: expect.stringContaining('more than 310.69 recorded miles'),
   })
   const tooMany = Array.from({ length: SIMILARITY_LIMITS.activities + 1 }, (_, i) =>
     activity(String(i), { status: 'missing' }),
   )
   await expect(session.group(tooMany, 50, signal())).rejects.toThrow('not truncated')
-  await expect(session.group([], NaN, signal())).rejects.toThrow('10 and 200')
+  await expect(session.group([], NaN, signal())).rejects.toThrow('32.81 and 656.17 feet')
   session.dispose()
 })
 
