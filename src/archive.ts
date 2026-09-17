@@ -1,11 +1,13 @@
 import { BlobReader, TextWriter, ZipReader } from '@zip.js/zip.js'
 import { compareActivities, parseGpx, type Activity } from './gpx'
+import { prepareElevation, type ElevationProfile } from './elevation'
 import { SimilaritySession, type SimilarityGeometry } from './similarity'
 import { ThumbnailCache, type Thumbnail } from './thumbnail-cache'
 
 export interface ImportedActivity extends Activity {
   thumbnail: Thumbnail
   geometry: SimilarityGeometry
+  elevation: ElevationProfile
 }
 
 export interface ImportIssue {
@@ -82,13 +84,26 @@ export async function importArchive(
       }
       if (parsed) {
         const activity: ImportedActivity = {
-          ...parsed.activity, thumbnail: { status: 'pending' }, geometry: { status: 'pending' },
+          ...parsed.activity, thumbnail: { status: 'pending' }, geometry: { status: 'pending' }, elevation: { status: 'pending' },
         }
         const activityIndex = activities.length
         activities.push(activity)
         publish(index + 1, activities.length === 1)
         const route = parsed.route
+        const elevationTracks = parsed.elevation
         await Promise.all([
+          (async () => {
+            let elevation: ElevationProfile
+            try {
+              elevation = await prepareElevation(elevationTracks, signal)
+            } catch (error) {
+              signal.throwIfAborted()
+              elevation = { status: 'error', message: error instanceof Error ? error.message : 'Elevation preparation failed.' }
+            }
+            signal.throwIfAborted()
+            activities[activityIndex] = { ...activities[activityIndex]!, elevation }
+            publish(index + 1)
+          })(),
           (async () => {
             let geometry: SimilarityGeometry
             try {

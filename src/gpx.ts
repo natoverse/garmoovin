@@ -1,4 +1,5 @@
 import type { Coordinate, Route } from './route'
+import type { ElevationTracks } from './elevation'
 
 export interface Activity {
   id: string
@@ -37,10 +38,11 @@ function timestamp(value: string): number | null {
   return Number.isFinite(date) ? date : null
 }
 
+const decimal = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/
+
 function coordinate(point: Element): Coordinate | null {
   const latitude = point.getAttribute('lat')?.trim() ?? ''
   const longitude = point.getAttribute('lon')?.trim() ?? ''
-  const decimal = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/
   if (!decimal.test(latitude) || !decimal.test(longitude)) return null
   const lat = Number(latitude)
   const lon = Number(longitude)
@@ -49,7 +51,14 @@ function coordinate(point: Element): Coordinate | null {
     : null
 }
 
-export function parseGpx(xml: string, sourceFile: string, id: string): { activity: Activity; route: Route } {
+function elevation(point: Element): number | null {
+  const value = text(point, 'ele')
+  if (!decimal.test(value)) return null
+  const metres = Number(value)
+  return Number.isFinite(metres) ? metres : null
+}
+
+export function parseGpx(xml: string, sourceFile: string, id: string): { activity: Activity; route: Route; elevation: ElevationTracks } {
   const document = new DOMParser().parseFromString(xml, 'application/xml')
   if (document.getElementsByTagName('parsererror').length > 0) {
     throw new Error('Malformed XML. Export this activity again as GPX.')
@@ -79,8 +88,11 @@ export function parseGpx(xml: string, sourceFile: string, id: string): { activit
 
   let earliest: number | null = null
   const route: Route = []
+  const elevationTracks: ElevationTracks = []
   for (const track of tracks) {
     for (const segment of children(track, 'trkseg')) {
+      const elevationPoints: ElevationTracks[number] = []
+      elevationTracks.push(elevationPoints)
       let coordinates: Coordinate[] = []
       const finishSegment = () => {
         if (coordinates.length > 1) route.push(coordinates)
@@ -90,6 +102,7 @@ export function parseGpx(xml: string, sourceFile: string, id: string): { activit
         const date = timestamp(text(point, 'time'))
         if (date !== null && (earliest === null || date < earliest)) earliest = date
         const position = coordinate(point)
+        elevationPoints.push({ position, elevation: elevation(point) })
         if (!position) {
           finishSegment()
         } else {
@@ -109,6 +122,7 @@ export function parseGpx(xml: string, sourceFile: string, id: string): { activit
       date: earliest ?? timestamp(text(metadata, 'time') || text(root, 'time')),
     },
     route,
+    elevation: elevationTracks,
   }
 }
 

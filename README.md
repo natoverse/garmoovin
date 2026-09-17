@@ -15,7 +15,7 @@ There is no website backend, localhost bridge, Garmin login, or Apply to Garmin 
 
 ## Using the viewer
 
-Open the app and choose **Open GPX ZIP**. Select a Garmin GPX archive from your computer; nested folders and `.gpx` filenames in either case are supported. The table fills as files are read and shows each activity's route preview, name, type, and recorded date, newest first.
+Open the app and choose **Open GPX ZIP**. Select a Garmin GPX archive from your computer; nested folders and `.gpx` filenames in either case are supported. The table fills as files are read and shows each activity's route preview, elevation profile, name, type, and recorded date, newest first.
 
 Dates are labeled UTC. Missing names fall back to GPX metadata or the filename; unavailable types and dates show **Unknown**. Unreadable files are listed separately without hiding the rest of the archive. **Choose another ZIP** replaces the current import, including any errors.
 
@@ -34,6 +34,16 @@ Thumbnails show the route on a plain background with north at the top. Each rout
 Images are generated in the browser and reused from a local cache when reopening an archive. The cache is keyed by route geometry and rendering settings, not the activity name or filename. Renaming a file does not regenerate an unchanged route; changing its geometry does. Unreadable cache entries are regenerated, and storage failures are reported while keeping previews available for the current session.
 
 **Clear thumbnail cache** removes stored previews, including any version left by an older renderer. Current images remain visible in memory, but an import already in progress cannot refill the cleared cache. Reopen an archive to generate and cache its previews again. Browser storage may also be evicted or unavailable, and caches are separate for each browser profile and site origin.
+
+## Elevation profiles
+
+The **Elevation** column sits directly beside **Route**, including in grouped results. It shows recorded GPX elevation in meters against cumulative horizontal distance in kilometers, in trackpoint order. Each preview fits its own distance extent and plotted elevation range, shown above and below the line; equal-sized previews do not imply equal distances or climbs. Flat recordings show a horizontal line. These are recorded measurements, not corrected terrain data or ascent/descent statistics.
+
+Separate tracks, segments, invalid coordinates, and missing or invalid elevations break the profile line. Distance still accumulates through missing elevation samples when coordinates are valid, but never adds a jump across a track, segment, or invalid-coordinate gap. **Partial data / gaps** identifies disconnected or incomplete profiles. Isolated elevation samples and stationary-only runs are not drawn or included in the displayed elevation range; at least one connected run with elevation at distinct distances is required.
+
+**No elevation data** means there is no drawable run; **Preparing elevation...** is a pending state, and **Elevation unavailable** indicates a processing error with a reason available on hover and to assistive technology. None of these states removes the activity or route preview. Profiles have accessible activity-specific range/distance descriptions, and the table scrolls horizontally on narrow screens to keep both previews reachable.
+
+Profiles are prepared once per import and reused when filtering, grouping, or drafting titles. They stay in browser memory only, disappear when replacing the archive or leaving the page, and do not depend on the route-thumbnail cache. Reopening a file reads its current elevations even when its unchanged route image is cached. No chart service, terrain lookup, new persistent storage, export fields, or Garmin requests are added.
 
 ## Title edits and JSON export
 
@@ -119,7 +129,7 @@ The supplied warm cream/rust theme uses **Bagel Fat One**, **Hanken Grotesk**, a
 
 The GitHub Pages client holds no Garmin credentials and makes no Garmin requests. Only the explicitly invoked local writer contacts Garmin for authentication, activity reads, and title updates. Neither unit uploads GPX archives or route coordinates.
 
-Only derived PNG thumbnails and their integrity/identity hashes are persisted in the browser's IndexedDB storage. Names, dates, filenames, coordinates, similarity descriptors/results, and GPX archives are not stored there. Route images can still reveal sensitive locations; clear the thumbnail cache when you no longer want them on this device.
+Only derived PNG thumbnails and their integrity/identity hashes are persisted in the browser's IndexedDB storage. Names, dates, filenames, coordinates, elevations/profiles, similarity descriptors/results, and GPX archives are not stored there. Route images can still reveal sensitive locations; clear the thumbnail cache when you no longer want them on this device.
 
 Groomin uses the `groomin-thumbnails` cache. **Clear thumbnail cache** also removes the legacy app's cache on the same browser origin; close other viewer tabs if cleanup is blocked. Old private-storage/cache identifiers are retained only for compatibility, not current branding.
 
@@ -131,9 +141,7 @@ Downloaded JSON and CLI journals contain private activity IDs, dates, paths, and
 
 The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright at the actual `/groomin/` base path. The **Check** workflow builds/type-checks the website and runs browser and Python unittest coverage. The separate **Deploy Pages** workflow publishes only `dist` from `main`, never Python code, credentials, journals, test data, or source archives.
 
-See `MANIFESTO.md` for the product direction and specs 001–007 for the implemented scope. Spec 005 owns the standalone writer; spec 007 owns the static deployment and schema-v2 boundary.
-
-Planned: `specs/008-elevation-profiles.spec.md` adds a compact recorded-elevation profile beside each activity's route thumbnail; it is not implemented yet.
+See `MANIFESTO.md` for the product direction and specs 001–008 for the implemented scope. Spec 005 owns the standalone writer; spec 007 owns the static deployment and schema-v2 boundary; spec 008 adds per-activity elevation profiles.
 
 ## Supplied visual design
 
