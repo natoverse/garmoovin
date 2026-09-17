@@ -90,6 +90,16 @@ tbody tr:hover { background: #101a22; }
 .search-field input::placeholder { color: var(--muted); }
 .search-field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .results-count { margin-bottom: 12px; font-size: 0.8rem; color: var(--muted); }
+.similarity-panel { margin-top: 24px; padding: 20px 24px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.similarity-panel label { display: block; margin-top: 14px; font-size: 0.85rem; }
+.similarity-panel input { accent-color: var(--accent); }
+.similarity-panel input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.similarity-panel input[type="range"] { display: block; width: min(100%, 420px); min-height: 40px; margin: 4px 0; }
+.similarity-panel .grouping-toggle { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.grouping-toggle input { width: 18px; height: 18px; }
+.similarity-panel p, .similarity-count { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+.similarity-count { margin-bottom: 12px; }
+.similarity-status { min-width: 180px; font-size: 0.8rem; color: #baf8ff; overflow-wrap: anywhere; }
 .title-export-panel { padding: 20px; margin-bottom: 24px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 .export-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .export-toolbar p, .draft-status, .export-notice { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }

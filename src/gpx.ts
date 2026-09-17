@@ -118,7 +118,8 @@ export function compareActivities(a: Activity, b: Activity): number {
     if (b.date === null) return -1
     return b.date - a.date
   }
-  return a.sourceFile < b.sourceFile ? -1 : a.sourceFile > b.sourceFile ? 1 : 0
+  if (a.sourceFile !== b.sourceFile) return a.sourceFile < b.sourceFile ? -1 : 1
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
 
 export function formatDate(date: number): string {

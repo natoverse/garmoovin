@@ -1,9 +1,11 @@
 import { BlobReader, TextWriter, ZipReader } from '@zip.js/zip.js'
 import { compareActivities, parseGpx, type Activity } from './gpx'
+import { SimilaritySession, type SimilarityGeometry } from './similarity'
 import { ThumbnailCache, type Thumbnail } from './thumbnail-cache'
 
-interface ImportedActivity extends Activity {
+export interface ImportedActivity extends Activity {
   thumbnail: Thumbnail
+  geometry: SimilarityGeometry
 }
 
 export interface ImportIssue {
@@ -24,9 +26,11 @@ export async function importArchive(
   signal: AbortSignal,
   onProgress: (progress: ImportProgress) => void,
   cache: ThumbnailCache,
+  similarity: SimilaritySession,
 ): Promise<ImportProgress> {
   const cacheGeneration = cache.generation
   const reader = new ZipReader(new BlobReader(file), { useWebWorkers: false })
+  let notification: ReturnType<typeof setTimeout> | undefined
   try {
     const entries = (await reader.getEntries()).filter(
       (entry) => !entry.directory && /\.gpx$/i.test(entry.filename),
@@ -44,7 +48,22 @@ export async function importArchive(
       issues: [...issues],
       duplicateSourceFiles,
     })
-    onProgress(snapshot(0))
+    let latestCompleted = 0
+    let lastPublished = -Infinity
+    const publish = (completed: number, immediate = false) => {
+      latestCompleted = completed
+      if (signal.aborted) return
+      if (immediate || performance.now() - lastPublished >= 250) {
+        clearTimeout(notification)
+        notification = undefined
+        lastPublished = performance.now()
+        onProgress(snapshot(completed))
+      } else if (notification === undefined) {
+        // Keep progressive feedback without repeatedly laying out hundreds of rows during import.
+        notification = setTimeout(() => publish(latestCompleted, true), 250)
+      }
+    }
+    publish(0, true)
     for (const [index, entry] of entries.entries()) {
       signal.throwIfAborted()
       let parsed: ReturnType<typeof parseGpx> | undefined
@@ -62,27 +81,48 @@ export async function importArchive(
         })
       }
       if (parsed) {
-        const activity: ImportedActivity = { ...parsed.activity, thumbnail: { status: 'pending' } }
+        const activity: ImportedActivity = {
+          ...parsed.activity, thumbnail: { status: 'pending' }, geometry: { status: 'pending' },
+        }
         const activityIndex = activities.length
         activities.push(activity)
-        onProgress(snapshot(index + 1))
-        await new Promise<void>((resolve) => setTimeout(resolve, 0))
-        let thumbnail: Thumbnail
-        try {
-          signal.throwIfAborted()
-          thumbnail = await cache.thumbnail(parsed.route, cacheGeneration, signal)
-        } catch (error) {
-          signal.throwIfAborted()
-          thumbnail = { status: 'error', message: error instanceof Error ? error.message : 'Route rendering failed.' }
-        }
-        activities[activityIndex] = { ...activity, thumbnail }
+        publish(index + 1, activities.length === 1)
+        const route = parsed.route
+        await Promise.all([
+          (async () => {
+            let geometry: SimilarityGeometry
+            try {
+              geometry = route.length ? await similarity.prepare(route, signal) : { status: 'missing' }
+            } catch (error) {
+              signal.throwIfAborted()
+              geometry = { status: 'error', message: error instanceof Error ? error.message : 'Route analysis failed.' }
+            }
+            signal.throwIfAborted()
+            activities[activityIndex] = { ...activities[activityIndex]!, geometry }
+            publish(index + 1)
+          })(),
+          (async () => {
+            let thumbnail: Thumbnail
+            try {
+              signal.throwIfAborted()
+              thumbnail = await cache.thumbnail(route, cacheGeneration, signal)
+            } catch (error) {
+              signal.throwIfAborted()
+              thumbnail = { status: 'error', message: error instanceof Error ? error.message : 'Route rendering failed.' }
+            }
+            signal.throwIfAborted()
+            activities[activityIndex] = { ...activities[activityIndex]!, thumbnail }
+            publish(index + 1)
+          })(),
+        ])
       }
-      onProgress(snapshot(index + 1))
+      publish(index + 1)
       // Release the event loop between files so progress and replacement imports stay interactive.
       await new Promise<void>((resolve) => setTimeout(resolve, 0))
     }
     return snapshot(entries.length)
   } finally {
+    clearTimeout(notification)
     await reader.close()
   }
 }
