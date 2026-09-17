@@ -56,3 +56,8 @@ Use the selected GPX file's recorded elevations only, with labeled distance (km)
 
 - Use the existing `--color-rust-500` token (`#D2692C`) for the elevation line as a distinct accent. Route thumbnails keep their darker rust-600 stroke; no route-cache version change is needed.
 - Keep statistics in the activity details area below the unified inline title editor described in spec 004. Chart dimensions, measurements, accessibility, and persistence remain unchanged.
+
+## Cross-platform layout correction (2026-09-17)
+
+- CI exposed real activity-type wrapping with wider fallback fonts: the `overflow-wrap: anywhere` rule allowed the table to squeeze even "Hiking" onto two lines. Use `break-word` so intrinsic sizing preserves ordinary words, while a 180-pixel badge limit keeps unusually long unknown types bounded and wrappable.
+- Preserve the single-line assertion rather than loosening it. Exercise both default and deliberately wider fallback text across the mobile breakpoint and desktop widths, report measured badge dimensions on failure, and separately cover long unrecognized types.

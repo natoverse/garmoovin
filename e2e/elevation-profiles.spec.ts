@@ -276,10 +276,13 @@ test('profile processing failures are visible without losing metadata, maps, or 
   await expect(page.getByRole('img', { name: /^Elevation profile for Recovered:/ })).toBeVisible()
 })
 
-for (const width of [320, 600, 601, 768, 1440]) {
-  test(`profiles and labels remain reachable in the scrollable table at ${width}px`, async ({ page }) => {
+for (const { width, widerFont } of [320, 600, 601, 768, 1440].flatMap((width) =>
+  [false, true].map((widerFont) => ({ width, widerFont })),
+)) {
+  test(`profiles and labels remain reachable in the scrollable table at ${width}px${widerFont ? ' with a wider fallback font' : ''}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('./')
+    if (widerFont) await page.addStyleTag({ content: '.type-label { font-family: monospace; letter-spacing: 1px; }' })
     await selectZip(page, await zip([
       ['route.gpx', route()],
       ['partial.gpx', route('Partial', ['0', '10', '', '20', '30'])],
@@ -302,11 +305,30 @@ for (const width of [320, 600, 601, 768, 1440]) {
       expect(await details.locator(label).evaluate((element) => element.getBoundingClientRect().width <= element.parentElement!.getBoundingClientRect().width)).toBe(true)
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    expect(await row(page, 'route.gpx').locator('.type-label').evaluate((element) => {
+    const badge = await row(page, 'route.gpx').locator('.type-label').evaluate((element) => {
       const style = getComputedStyle(element)
-      return element.clientHeight <= Math.ceil(parseFloat(style.lineHeight) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom))
-    })).toBe(true)
+      return {
+        height: element.clientHeight,
+        oneLineHeight: Math.ceil(parseFloat(style.lineHeight) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)),
+        width: element.clientWidth,
+        font: style.fontFamily,
+      }
+    })
+    expect(badge.height, JSON.stringify(badge)).toBeLessThanOrEqual(badge.oneLineHeight)
     await page.getByRole('region', { name: 'Scrollable activity list' }).focus()
     await expect(page.getByRole('region', { name: 'Scrollable activity list' })).toBeFocused()
   })
 }
+
+test('long unrecognized activity types still wrap inside bounded badges', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 })
+  await page.goto('./')
+  const type = 'X'.repeat(200)
+  await selectZip(page, await zip([['long-type.gpx', route('Long type', ['0', '10'], type)]]))
+  await expectLoaded(page, 1)
+  const label = page.locator('.type-label')
+  await expect(label).toHaveText(type)
+  expect(await label.evaluate((element) => element.getBoundingClientRect().width)).toBeLessThanOrEqual(180)
+  expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
