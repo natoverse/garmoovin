@@ -1,4 +1,4 @@
-# Garmin View
+# Groomin
 
 A personal Garmin activity cleanup companion to Stronger, with two independent units:
 
@@ -7,7 +7,7 @@ A personal Garmin activity cleanup companion to Stronger, with two independent u
 
 ## GitHub Pages
 
-The website's project path is `/garmin-view/`, with its Pages address at `https://natoverse.github.io/garmin-view/` after deployment. In the repository's **Settings → Pages**, select **GitHub Actions** as the source before the first deployment. The **Deploy Pages** workflow runs the browser suite, builds, and publishes only Vite's `dist` artifact when changes reach `main`; it can also be dispatched on `main`. The feature branch itself does not deploy.
+The website's project path is `/groomin/`, with its Pages address at `https://natoverse.github.io/groomin/` after deployment. In the repository's **Settings → Pages**, select **GitHub Actions** as the source before the first deployment. The **Deploy Pages** workflow runs the browser suite, builds, and publishes only Vite's `dist` artifact when changes reach `main`; it can also be dispatched on `main`. The feature branch itself does not deploy.
 
 There is no website backend, localhost bridge, Garmin login, or Apply to Garmin button. Hosting serves code only. The Python CLI, credentials, journals, archives, and downloads are not deployment artifacts. A Pages website can be publicly accessible even when its source repository is private; private activity files must never be added to the published assets.
 
@@ -74,7 +74,9 @@ python3.13 -m venv .venv
 
 `login` prompts in the terminal for your email, password, and MFA code when required. It saves a private reusable session and changes no activities. `review` loads that session and performs only reads. `apply` performs a fresh review, prints the account and every original/current/proposed title, source identity, blocking reason, and eligible count, then requires typing **APPLY** in an interactive terminal. There is no unattended `--yes` option. Changing the file after review cannot change that invocation's immutable batch.
 
-`GARMINTOKENS` is a CLI-only **token-directory path**, not token JSON or a permanent bearer token. It defaults to `~/.garmin-view/tokens`. The library restores and refreshes saved sessions; expired authentication requires `login` again, never an automatic write retry. `GARMIN_VIEW_JOURNAL_DIR` defaults to `~/.garmin-view/journal`. Use separate dedicated directories outside this repository, owned by you, with no symlinked ancestry. Directories use mode 0700 and token/journal files use 0600. Process locks prevent overlapping writers or logins sharing these token/journal directories.
+`GARMINTOKENS` is a CLI-only **token-directory path**, not token JSON or a permanent bearer token. It defaults to `~/.groomin/tokens`. The library restores and refreshes saved sessions; expired authentication requires `login` again, never an automatic write retry. `GROOMIN_JOURNAL_DIR` defaults to `~/.groomin/journal`. Use separate dedicated directories outside this repository, owned by you, with no symlinked ancestry. Directories use mode 0700 and token/journal files use 0600. Process locks prevent overlapping writers or logins sharing these token/journal directories.
+
+**Existing installations:** the former `~/.garmin-view` storage and `GARMIN_VIEW_JOURNAL_DIR` setting remain recognized, with a warning, so a rename cannot silently abandon credentials or an unresolved journal. If both storage roots exist or environment settings conflict, select the existing token/journal directories explicitly before continuing. Nothing is moved or deleted automatically. Rename these directories only while no writer or login is running, preserving the entire journal history.
 
 For each proposal, the exact ID must appear in the authenticated account's activity listing and match the returned details, known type, and start time within **60 seconds**. The listing uses the UTC source day plus/minus one day to cover Garmin's local-date filtering; it never chooses a nearest match. Type checks ignore case and space/hyphen/underscore formatting, not meaning. The review's `changedSinceExport` flag highlights remote names that differ from the imported title.
 
@@ -115,12 +117,14 @@ The GitHub Pages client holds no Garmin credentials and makes no Garmin requests
 
 Only derived PNG thumbnails and their integrity/identity hashes are persisted in the browser's IndexedDB storage. Names, dates, filenames, coordinates, similarity descriptors/results, and GPX archives are not stored there. Route images can still reveal sensitive locations; clear the thumbnail cache when you no longer want them on this device.
 
+Groomin uses the `groomin-thumbnails` cache. **Clear thumbnail cache** also removes the legacy app's cache on the same browser origin; close other viewer tabs if cleanup is blocked. Old private-storage/cache identifiers are retained only for compatibility, not current branding.
+
 ZIP and GPX files, `garmin-title-mappings*.json` exports (including browser-numbered copies), `local-data/`, build output, and browser-test artifacts are Git-ignored. Keep renamed exports and any other locally generated activity data in `local-data/`. Neither downloads nor `local-data/` belong in the deployed artifact. The build has no public-data directory and includes only the app entry point and its imported assets; private archives must never be imported into application source.
 
 Downloaded JSON and CLI journals contain private activity IDs, dates, paths, and titles. Treat them as sensitive even though they contain no credentials or coordinates. Garmin tokens remain in the private token directory, never frontend assets, browser storage, mapping exports, or application logs. Terminal review output contains activity information; avoid sharing it or enabling verbose third-party HTTP logging. Clearing browser storage does not delete downloaded JSON or CLI journals.
 
 ## Project
 
-The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright at the actual `/garmin-view/` base path. The **Check** workflow builds/type-checks the website and runs browser and Python unittest coverage. The separate **Deploy Pages** workflow publishes only `dist` from `main`, never Python code, credentials, journals, test data, or source archives.
+The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright at the actual `/groomin/` base path. The **Check** workflow builds/type-checks the website and runs browser and Python unittest coverage. The separate **Deploy Pages** workflow publishes only `dist` from `main`, never Python code, credentials, journals, test data, or source archives.
 
 See `MANIFESTO.md` for the product direction and specs 001–007 for the implemented scope. Spec 005 owns the standalone writer; spec 007 owns the static deployment and schema-v2 boundary.

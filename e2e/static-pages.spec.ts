@@ -8,7 +8,7 @@ test('project-path assets, private import, thumbnails, and schema-v2 writer hand
   const requests: { url: string; method: string; body: string | null }[] = []
   page.on('request', (request) => requests.push({ url: request.url(), method: request.method(), body: request.postData() }))
   await page.goto('./')
-  await expect(page).toHaveURL(/\/garmin-view\/$/)
+  await expect(page).toHaveURL(/\/groomin\/$/)
   const archive = await zip([
     ['nested/garmin-1.gpx', gpx('<trk><name>Original 1</name><type>hiking</type><trkseg><trkpt lat="0" lon="0"><time>2025-01-01T10:00:00Z</time></trkpt><trkpt lat="1" lon="1"/></trkseg></trk>')],
     ['garmin-2.gpx', gpx('<trk><name>Original 2</name><type>hiking</type><trkseg><trkpt lat="0" lon="0"><time>2025-01-01T10:00:00Z</time></trkpt><trkpt lat="2" lon="2"/></trkseg></trk>')],
@@ -36,7 +36,7 @@ test('project-path assets, private import, thumbnails, and schema-v2 writer hand
   for (const request of http) {
     expect(request.method).toBe('GET')
     expect(request.body).toBeNull()
-    expect(request.url).toMatch(/^http:\/\/127\.0\.0\.1:4175\/garmin-view\/(?:$|assets\/)/)
+    expect(request.url).toMatch(/^http:\/\/127\.0\.0\.1:4175\/groomin\/(?:$|assets\/)/)
   }
   expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0)
 })

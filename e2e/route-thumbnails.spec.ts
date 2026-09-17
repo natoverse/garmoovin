@@ -65,7 +65,7 @@ async function setup(page: Page, options = { delay: 0, failures: 0 }) {
 async function cachedKeys(page: Page) {
   return page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('garmin-view-thumbnails', 1)
+      const request = indexedDB.open('groomin-thumbnails', 1)
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })
@@ -118,6 +118,29 @@ test('cache fingerprint includes both geometry and every rendering setting', asy
   expect(await routeKey([[[0, 0], [1, 0]], [[1, 1], [0, 0]]])).not.toEqual(expected)
 })
 
+test('clearing Groomin thumbnails also removes the legacy app cache', async ({ page }) => {
+  await setup(page)
+  await selectZip(page, await zip([['route.gpx', routeGpx()]]))
+  await expectLoaded(page, 1)
+  await expectImage(page)
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('garmin-view-thumbnails', 1)
+    request.onupgradeneeded = () => request.result.createObjectStore('images')
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const tx = db.transaction('images', 'readwrite')
+      tx.objectStore('images').put('synthetic legacy thumbnail', 'legacy')
+      tx.oncomplete = () => { db.close(); resolve() }
+      tx.onabort = () => { db.close(); reject(tx.error) }
+    }
+  }))
+  await page.getByRole('button', { name: 'Clear thumbnail cache' }).click()
+  await expect(page.locator('.cache-notice')).toContainText('Thumbnail cache cleared.')
+  expect(await cachedKeys(page)).toEqual([])
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name))).toEqual(['groomin-thumbnails'])
+})
+
 test('draws a route without network requests and only persists the derived image', async ({ page }) => {
   await setup(page)
   const network: string[] = []
@@ -133,7 +156,7 @@ test('draws a route without network requests and only persists the derived image
   expect(keys).toEqual([await routeKey(triangle)])
   const fields = await page.evaluate(async (key) => {
     const db = await new Promise<IDBDatabase>((resolve) => {
-      const request = indexedDB.open('garmin-view-thumbnails', 1)
+      const request = indexedDB.open('groomin-thumbnails', 1)
       request.onsuccess = () => resolve(request.result)
     })
     try {
@@ -219,7 +242,7 @@ for (const corruption of ['checksum', 'broken-png', 'wrong-dimensions']) {
     const key = (await cachedKeys(page))[0]!
     await page.evaluate(async ({ key, corruption }) => {
       const db = await new Promise<IDBDatabase>((resolve) => {
-        const request = indexedDB.open('garmin-view-thumbnails', 1)
+        const request = indexedDB.open('groomin-thumbnails', 1)
         request.onsuccess = () => resolve(request.result)
       })
       try {

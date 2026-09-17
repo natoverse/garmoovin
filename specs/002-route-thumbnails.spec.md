@@ -47,3 +47,7 @@ Generate thumbnails once and reuse a local cache rather than redrawing them when
 - IndexedDB stores only PNG blobs, content-derived keys, and image checksums. Keys hash the normalized segments and all rendering settings; bump the renderer version whenever its algorithm changes. Cached images must pass checksum, decoding, and dimension checks before reuse.
 - Metadata is published before each thumbnail is prepared; raw geometry is discarded after processing the file. Spec 006 additionally retains a disposable, segment-preserving similarity descriptor independently of the image cache. Cache clearing invalidates pending writes from the current import without removing its on-screen images or matching geometry.
 - Use `../stronger` as a reference where relevant. The existing localhost frontend and synthetic Playwright coverage remain the delivery approach.
+
+## Rebranding decisions (2026-09-17)
+
+- The app is now Groomin and uses `groomin-thumbnails`. Cache clearing also removes the legacy app database, preventing old sensitive route previews from being left behind by the rename.

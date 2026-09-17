@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('explains local import and renders an accessible empty state', async ({ page }) => {
-  await expect(page.getByRole('heading', { name: 'Garmin View.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Groomin.' })).toBeVisible()
   await expect(page.getByText('Your activities will appear here')).toBeVisible()
   await expect(page.getByText('Read in your browser. Nothing uploaded, no Garmin login.')).toBeVisible()
   await page.keyboard.press('Tab')

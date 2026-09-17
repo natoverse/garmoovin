@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -11,7 +10,7 @@ from . import auth
 from .garmin import GarminAdapter, GarminError
 from .mapping import MappingError, load_mapping
 from .models import Batch
-from .storage import Journal, JournalError, StorageError, storage_lock, token_directory
+from .storage import Journal, JournalError, StorageError, journal_directory, storage_lock, token_directory
 from .writer import Writer, WriterError
 
 
@@ -36,7 +35,7 @@ def confirmed(batch: Batch) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Review and apply a Garmin View schema-v2 JSON export. No website connection or ZIP is needed.")
+    parser = argparse.ArgumentParser(description="Review and apply a Groomin schema-v2 JSON export. No website connection or ZIP is needed.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("login", help="Authenticate in this terminal and save a private session; no activity writes")
     for name in ("review", "apply"):
@@ -53,8 +52,7 @@ def main(argv: list[str] | None = None) -> int:
             return auth.main()
         mapping = load_mapping(args.mapping) if args.command in ("review", "apply") else None
         directory = token_directory()
-        journal_path = Path(os.getenv("GARMIN_VIEW_JOURNAL_DIR", str(Path.home() / ".garmin-view" / "journal")))
-        journal = Journal(journal_path)
+        journal = Journal(journal_directory())
         with storage_lock(directory), storage_lock(journal.directory):
             writer = Writer(GarminAdapter(directory), journal)
             writer.connect()

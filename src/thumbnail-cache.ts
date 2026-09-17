@@ -5,8 +5,18 @@ export type Thumbnail =
   | { status: 'ready'; image: Blob }
   | { status: 'error'; message: string }
 
-const DATABASE = 'garmin-view-thumbnails'
+const DATABASE = 'groomin-thumbnails'
+const LEGACY_DATABASE = 'garmin-view-thumbnails'
 const STORE = 'images'
+
+function clearLegacyDatabase(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(LEGACY_DATABASE)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error ?? new Error('Unable to remove legacy thumbnail storage.'))
+    request.onblocked = () => reject(new Error('Close other activity-viewer tabs and try clearing the cache again.'))
+  })
+}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -15,7 +25,7 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => request.result.createObjectStore(STORE)
     request.onblocked = () => {
       blocked = true
-      reject(new Error('Close other Garmin View tabs and try clearing the cache again.'))
+      reject(new Error('Close other Groomin tabs and try clearing the cache again.'))
     }
     request.onerror = () => reject(request.error ?? new Error('Unable to open thumbnail storage.'))
     request.onsuccess = () => {
@@ -133,6 +143,7 @@ export class ThumbnailCache {
     this.clearing = true
     try {
       await transaction('readwrite', (store) => store.clear())
+      await clearLegacyDatabase()
       this.unavailable = false
     } finally {
       this.clearing = false

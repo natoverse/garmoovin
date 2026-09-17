@@ -199,7 +199,7 @@ export default function App() {
       <header className="app-header">
         <div>
           <p className="eyebrow">Your activity archive</p>
-          <h1>Garmin View<span className="title-dot">.</span></h1>
+          <h1>Groomin<span className="title-dot">.</span></h1>
           <p className="subtitle">A clearer view of where you've been.</p>
         </div>
         <span className="privacy-badge"><span aria-hidden="true" /> Local files only</span>

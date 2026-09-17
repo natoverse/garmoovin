@@ -232,7 +232,7 @@ test('thumbnail cache hits, clearing, and rendering/storage failures preserve ma
   await expect(page.locator('.route-preview')).toHaveText(['Thumbnail unavailable', 'Thumbnail unavailable'])
   expect(requests).toEqual([])
   expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0)
-  expect(await page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name))).toEqual(['garmin-view-thumbnails'])
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name))).toEqual(['groomin-thumbnails'])
 })
 
 test('superseded group calculations cannot publish stale memberships after slider, filter or archive changes', async ({ page }) => {

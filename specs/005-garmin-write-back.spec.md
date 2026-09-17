@@ -61,7 +61,13 @@ Report results per activity rather than presenting a partially successful batch 
 - `review` and `reconcile` are read-only. Applying always displays a fresh immutable review and requires typing `APPLY` in an interactive terminal; no unattended confirmation option exists.
 - Schema version 2 is documented in README and spec 007. Reject version 1, unknown/duplicate fields, invalid/missing identity, duplicate targets, and inputs over 1 MiB before authenticating. JSON provides all source evidence; the ZIP fingerprint is provenance, not authorization.
 - Own-account ID membership uses a three-day date listing around the source UTC day, followed by exact ID, type, and a maximum 60-second time difference. Both root and summary-DTO metadata layouts are supported.
-- Store refreshed tokens under `~/.garmin-view/tokens` by default and journals under `~/.garmin-view/journal` (`GARMIN_VIEW_JOURNAL_DIR` override). Require owner-only, dedicated storage outside the repository; hold token and journal process locks for the invocation.
+- Store refreshed tokens under `~/.groomin/tokens` by default and journals under `~/.groomin/journal` (`GROOMIN_JOURNAL_DIR` override). Require owner-only, dedicated storage outside the repository; hold token and journal process locks for the invocation.
 - Journal before the batch and before each possible mutation. Require read-back; pause on rate limiting, authentication failure, or uncertainty. Restart recovery re-reads remote state and never automatically replays writes.
 - Both units retain independent state. The writer does not modify JSON or notify the website; browser proposals remain available for export.
 - Synthetic adapter, CLI, identity, conflict, journaling, interruption, and recovery tests exercise the implementation without real-account login or mutations. Live Garmin compatibility remains unverified.
+
+## Rebranding decisions (2026-09-17)
+
+- Groomin is the application/repository name. New private storage defaults to `~/.groomin`, with `GROOMIN_JOURNAL_DIR` as the journal override.
+- Existing private storage and the former journal environment variable remain recognized with visible warnings. Ambiguous roots or conflicting overrides fail explicitly rather than bypassing an unresolved journal. No credentials or journals are automatically moved or discarded.
+- Garmin remains the external service name; the `garminconnect` dependency, `garmin_writer` module, and schema-v2 JSON contract are unchanged.

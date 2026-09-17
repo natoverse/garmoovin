@@ -1,6 +1,7 @@
 import json
 import fcntl
 import os
+import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -45,8 +46,34 @@ def private_directory(path: Path) -> Path:
     return path
 
 
+def default_directory(name: str) -> Path:
+    current_root = Path.home() / ".groomin"
+    legacy_root = Path.home() / ".garmin-view"
+    if legacy_root.exists() or legacy_root.is_symlink():
+        if current_root.exists() or current_root.is_symlink():
+            raise StorageError("Both Groomin and legacy private storage exist. Select the intended token/journal directories explicitly; do not discard recovery journals.")
+        print(f"Using the legacy private {name} directory to preserve existing state. No data was moved or discarded.", file=sys.stderr)
+        return legacy_root / name
+    return current_root / name
+
+
+def journal_directory() -> Path:
+    current = os.getenv("GROOMIN_JOURNAL_DIR")
+    legacy = os.getenv("GARMIN_VIEW_JOURNAL_DIR")
+    if current is not None and legacy is not None and Path(current).expanduser().absolute() != Path(legacy).expanduser().absolute():
+        raise StorageError("Conflicting journal directory settings. Set only GROOMIN_JOURNAL_DIR to the existing recovery journal directory.")
+    if current is not None:
+        return Path(current)
+    if legacy is not None:
+        print("GARMIN_VIEW_JOURNAL_DIR is deprecated; use GROOMIN_JOURNAL_DIR with the same directory.", file=sys.stderr)
+        return Path(legacy)
+    return default_directory("journal")
+
+
 def token_directory() -> Path:
-    value = os.getenv("GARMINTOKENS", str(Path.home() / ".garmin-view" / "tokens"))
+    value = os.getenv("GARMINTOKENS")
+    if value is None:
+        return private_directory(default_directory("tokens"))
     if value.lstrip().startswith("{") or (value.startswith("~") and not value.startswith("~/")) or value.endswith(".json"):
         raise StorageError("GARMINTOKENS must be a dedicated directory path, not token JSON or a token filename.")
     return private_directory(Path(value))

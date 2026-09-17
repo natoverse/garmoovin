@@ -36,7 +36,7 @@ class CliTests(unittest.TestCase):
     def run_cli(self, command, *, answer="APPLY", tty=True, on_confirm=None):
         with patch("garmin_writer.__main__.token_directory", return_value=self.tokens), \
              patch("garmin_writer.__main__.GarminAdapter", return_value=self.fake), \
-             patch.dict(os.environ, {"GARMIN_VIEW_JOURNAL_DIR": str(self.root / "journal")}), \
+             patch.dict(os.environ, {"GROOMIN_JOURNAL_DIR": str(self.root / "journal")}), \
              patch("sys.stdin.isatty", return_value=tty), \
              patch("builtins.input", side_effect=on_confirm, return_value=answer), \
              contextlib.redirect_stdout(self.output), contextlib.redirect_stderr(self.errors):
