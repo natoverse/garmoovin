@@ -1,12 +1,20 @@
 # Garmin View
 
-A personal Garmin activity cleanup companion to Stronger. Browse a read-only activity list with locally cached route previews. Filtering, renaming, and Garmin write-back are specified but not implemented.
+A personal Garmin activity cleanup companion to Stronger. Browse and filter a read-only activity list with locally cached route previews. Renaming and Garmin write-back are specified but not implemented.
 
 ## Using the viewer
 
 Open the app and choose **Open GPX ZIP**. Select a Garmin GPX archive from your computer; nested folders and `.gpx` filenames in either case are supported. The table fills as files are read and shows each activity's route preview, name, type, and recorded date, newest first.
 
 Dates are labeled UTC. Missing names fall back to GPX metadata or the filename; unavailable types and dates show **Unknown**. Unreadable files are listed separately without hiding the rest of the archive. **Choose another ZIP** replaces the current import, including any errors.
+
+## Filtering and search
+
+Activity-type tags appear above the list, with every type initially selected. Click tags to independently toggle types, or use **Select all** and **Select none**. Multiple selected types are combined; a type's tag stays available even when the current search has no matches for it.
+
+**Search activity names** matches any literal part of a displayed name, ignoring case and leading/trailing search whitespace. `green`, `GREEN`, and `gree` match "Green Mountain"; `green loop` does not match "Green Mountain Loop". Search applies within the selected types, and clearing it does not restore deselected types.
+
+The list reports **Showing X of Y activities**, preserving newest-first order and existing previews without re-importing files or regenerating thumbnails. Filters work during import: newly discovered types follow the most recent Select all/none choice, while individual toggles remain in effect. Choosing another archive resets the search and selects all its types. Filters are not saved across sessions.
 
 ## Route previews
 
@@ -28,4 +36,4 @@ ZIP and GPX files, `local-data/`, build output, and browser-test artifacts are G
 
 The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright. The **Check** GitHub Actions workflow builds, type-checks, and runs that coverage; it does not deploy the app.
 
-See `MANIFESTO.md` for the product direction and specs 001-002 for the implemented scope.
+See `MANIFESTO.md` for the product direction and specs 001-003 for the implemented scope.
