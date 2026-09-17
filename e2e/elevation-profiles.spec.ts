@@ -20,6 +20,17 @@ const route = (name = 'Recorded hills', elevations = ['-10', '30', '0'], type = 
 const row = (page: Page, path: string) => page.locator('tbody tr').filter({ has: page.locator(`.activity-name[title="${path}"]`) })
 const profilePath = (page: Page, path: string) => row(page, path).locator('.elevation-preview path')
 
+async function expectMatchingPreviews(page: Page, width = 120, height = 80) {
+  const count = await page.locator('tbody tr').count()
+  expect(count).toBeGreaterThan(0)
+  await expect.poll(() => page.locator('.route-preview, .elevation-preview').evaluateAll((elements) =>
+    elements.map((element) => {
+      const bounds = element.getBoundingClientRect()
+      return [bounds.width, bounds.height]
+    }),
+  )).toEqual(Array.from({ length: count * 2 }, () => [width, height]))
+}
+
 async function installProbe(page: Page) {
   await page.addInitScript(() => {
     window.elevationProbe = { parses: 0, renders: 0, holdTimers: false, timers: [], failProfile: false }
@@ -81,6 +92,11 @@ test('places a labeled recorded profile beside each route with separate missing 
   }
   await expect(row(page, 'no-elevation.gpx').getByRole('img', { name: 'Route preview for No measurements' })).toBeVisible()
   await expect(row(page, 'no-route.gpx').locator('.route-preview')).toHaveText('No route')
+  await expectMatchingPreviews(page)
+  await expect(row(page, 'hills.gpx').locator('.activity-details .elevation-range')).toHaveText('-10 to 30 m')
+  await expect(row(page, 'hills.gpx').locator('.activity-details .elevation-distance')).toHaveText('0 to 0.22 km')
+  await expect(page.locator('.elevation-preview .activity-stats, .elevation-preview .elevation-range, .elevation-preview .elevation-distance')).toHaveCount(0)
+  await expect(row(page, 'no-elevation.gpx').locator('.activity-stats')).toHaveCount(0)
 })
 
 test('parsing preserves boundaries, elevation gaps, and duplicate positions without changing route geometry', async ({ page }) => {
@@ -171,6 +187,12 @@ test('profiles follow duplicate-name activities through drafts, filters, groupin
   await expect(profilePath(page, 'garmin-1.gpx')).toHaveAttribute('d', first!)
   await expect(profilePath(page, 'garmin-2.gpx')).toHaveAttribute('d', second!)
   await expect(drafts).toHaveValue('Keep this proposal')
+  await expect(row(page, 'garmin-1.gpx').locator('.activity-details .elevation-range')).toHaveText('-10 to 30 m')
+  await expect(row(page, 'garmin-2.gpx').locator('.activity-details .elevation-range')).toHaveText('10 to 10 m')
+  await page.getByRole('searchbox').fill('Elevation:')
+  await expect(page.locator('tbody tr')).toHaveCount(0)
+  await page.getByRole('searchbox').fill('same')
+  await expect(page.locator('tbody tr')).toHaveCount(2)
   expect(await page.evaluate(() => window.elevationProbe.parses)).toBe(3)
 })
 
@@ -215,6 +237,7 @@ test('pending large imports remain usable and replacement prevents stale profile
   await selectZip(page, large)
   await expect(page.locator('tbody tr')).toHaveCount(1)
   await expect(page.getByLabel('Preparing elevation... for Old 0', { exact: true })).toBeVisible()
+  await expectMatchingPreviews(page)
   const draft = page.getByRole('textbox', { name: 'New title for Old 0 (0.gpx)', exact: true })
   await draft.fill('Unsaved draft')
   await page.getByRole('searchbox').fill('old')
@@ -241,6 +264,7 @@ test('profile processing failures are visible without losing metadata, maps, or 
   ]))
   await expectLoaded(page, 3)
   await expect(row(page, 'broken.gpx').locator('.elevation-error')).toHaveText('Elevation unavailable')
+  await expectMatchingPreviews(page)
   await expect(page.getByLabel('Elevation unavailable for Broken profile: Synthetic elevation drawing failure.', { exact: true })).toBeVisible()
   await expect(page.getByRole('img', { name: 'Route preview for Broken profile' })).toBeVisible()
   await expect(row(page, 'broken.gpx').getByRole('textbox')).toBeEnabled()
@@ -251,21 +275,33 @@ test('profile processing failures are visible without losing metadata, maps, or 
   await expect(page.getByRole('img', { name: /^Elevation profile for Recovered:/ })).toBeVisible()
 })
 
-for (const width of [320, 768, 1440]) {
+for (const width of [320, 600, 601, 768, 1440]) {
   test(`profiles and labels remain reachable in the scrollable table at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('./')
-    await selectZip(page, await zip([['route.gpx', route()]]))
-    await expectLoaded(page, 1)
-    const preview = page.getByRole('img', { name: /^Elevation profile for/ })
+    await selectZip(page, await zip([
+      ['route.gpx', route()],
+      ['partial.gpx', route('Partial', ['0', '10', '', '20', '30'])],
+      ['flat.gpx', route('Flat', ['10', '10'])],
+      ['missing.gpx', gpx()],
+    ]))
+    await expectLoaded(page, 4)
+    await expectMatchingPreviews(page, width <= 600 ? 90 : 120, width <= 600 ? 60 : 80)
+    const preview = row(page, 'route.gpx').getByRole('img', { name: /^Elevation profile for/ })
     await preview.scrollIntoViewIfNeeded()
     await expect(preview).toBeInViewport()
     expect(await preview.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    await expect(page.locator('.elevation-preview .elevation-gap')).toHaveCount(0)
+    await expect(row(page, 'partial.gpx').locator('.activity-details .elevation-gap')).toHaveText('Partial data / gaps')
+    expect(await preview.textContent()).toBe('')
+    const details = row(page, 'route.gpx').locator('.activity-details')
+    await details.scrollIntoViewIfNeeded()
     for (const label of ['.elevation-range', '.elevation-distance']) {
-      expect(await preview.locator(label).evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+      await expect(details.locator(label)).toBeInViewport()
+      expect(await details.locator(label).evaluate((element) => element.getBoundingClientRect().width <= element.parentElement!.getBoundingClientRect().width)).toBe(true)
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    expect(await page.locator('.type-label').evaluate((element) => {
+    expect(await row(page, 'route.gpx').locator('.type-label').evaluate((element) => {
       const style = getComputedStyle(element)
       return element.clientHeight <= Math.ceil(parseFloat(style.lineHeight) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom))
     })).toBe(true)

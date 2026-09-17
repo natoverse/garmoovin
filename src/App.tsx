@@ -3,7 +3,7 @@ import { importArchive, type ImportProgress } from './archive'
 import { formatDate } from './gpx'
 import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
-import ElevationPreview from './ElevationPreview'
+import ElevationPreview, { ElevationStats } from './ElevationPreview'
 import { SimilaritySession, type SimilarityGroup } from './similarity'
 import { ThumbnailCache } from './thumbnail-cache'
 import { createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
@@ -343,7 +343,10 @@ export default function App() {
                   <tr key={activity.id} data-route-group={grouping ? groupById.get(activity.id)?.group.members[0] : undefined}>
                     <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
                     <td className="elevation-cell"><ElevationPreview profile={activity.elevation} name={activity.name} /></td>
-                    <td className="activity-name" title={activity.sourceFile}>{activity.name}</td>
+                    <td className="activity-details">
+                      <div className="activity-name" title={activity.sourceFile}>{activity.name}</div>
+                      <ElevationStats profile={activity.elevation} />
+                    </td>
                     <td className="title-edit-cell">
                       <label className="visually-hidden" htmlFor={`new-title-${activity.id}`}>New title for {activity.name} ({activity.sourceFile})</label>
                       <input
