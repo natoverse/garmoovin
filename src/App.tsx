@@ -7,6 +7,8 @@ import { SimilaritySession, type SimilarityGroup } from './similarity'
 import { ThumbnailCache } from './thumbnail-cache'
 import { createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
 import { useSimilarity } from './use-similarity'
+import logo from './assets/groomin-logo.jpg'
+import './theme.css'
 import './App.css'
 
 type ImportState =
@@ -197,12 +199,13 @@ export default function App() {
   return (
     <main>
       <header className="app-header">
-        <div>
+        <img className="brand-art" src={logo} alt="Groomin logo" width="1536" height="1024" fetchPriority="high" />
+        <div className="header-copy">
           <p className="eyebrow">Your activity archive</p>
-          <h1>Groomin<span className="title-dot">.</span></h1>
+          <h1>Good routes.<br /><span>Better names.</span></h1>
           <p className="subtitle">A clearer view of where you've been.</p>
+          <span className="privacy-badge"><span aria-hidden="true" /> Local files only</span>
         </div>
-        <span className="privacy-badge"><span aria-hidden="true" /> Local files only</span>
       </header>
 
       <section className="import-panel" aria-labelledby="import-heading">
@@ -390,7 +393,13 @@ export default function App() {
         </section>
       )}
 
-      <footer>Source GPX files stay unchanged. No changes are made to Garmin Connect.</footer>
+      <footer>
+        <span className="footer-brand">groomin'</span>
+        <div>
+          <p>Source GPX files stay unchanged. No changes are made to Garmin Connect.</p>
+          <p>Typography from Google Fonts. Your activity data stays in your browser.</p>
+        </div>
+      </footer>
     </main>
   )
 }

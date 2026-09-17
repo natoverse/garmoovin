@@ -1,3 +1,5 @@
+<img src="src/assets/groomin-logo.jpg" alt="Groomin logo" width="620" />
+
 # Groomin
 
 A personal Garmin activity cleanup companion to Stronger, with two independent units:
@@ -111,7 +113,9 @@ Derived geometry and bounded pair-score reuse live only in memory for the select
 
 ## Privacy
 
-Archive contents are processed in browser memory. The website has no login, upload, analytics, external font, or map service. Reloading the page clears the imported activity list, and the source archive remains unchanged.
+Archive contents are processed in browser memory. The website has no login, activity upload, analytics, or map service. Reloading the page clears the imported activity list, and the source archive remains unchanged.
+
+The supplied warm cream/rust theme uses **Bagel Fat One**, **Hanken Grotesk**, and **Space Mono** from the Google Fonts CDN (`fonts.googleapis.com` and `fonts.gstatic.com`). These are public typography requests, not activity-data requests; Google receives normal connection metadata such as your IP address. The page sets a no-referrer policy, and readable local fallback fonts keep the viewer usable if the CDN is blocked or unavailable. No filenames, titles, routes, or exports are included in font requests.
 
 The GitHub Pages client holds no Garmin credentials and makes no Garmin requests. Only the explicitly invoked local writer contacts Garmin for authentication, activity reads, and title updates. Neither unit uploads GPX archives or route coordinates.
 
@@ -128,3 +132,9 @@ Downloaded JSON and CLI journals contain private activity IDs, dates, paths, and
 The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright at the actual `/groomin/` base path. The **Check** workflow builds/type-checks the website and runs browser and Python unittest coverage. The separate **Deploy Pages** workflow publishes only `dist` from `main`, never Python code, credentials, journals, test data, or source archives.
 
 See `MANIFESTO.md` for the product direction and specs 001–007 for the implemented scope. Spec 005 owns the standalone writer; spec 007 owns the static deployment and schema-v2 boundary.
+
+## Supplied visual design
+
+The app uses the supplied `theme.css` tokens for its cream background, brown ink, rust buttons, amber selections, olive focus rings, rounded panels, and offset shadows. The same supplied logo appears above the viewer and this README; it is an optimized JPEG preserving the original artwork and dimensions. Route previews use matching cream/rust colors with a new rendering-cache version.
+
+`groomin-design.zip` remains local and Git-ignored. Only the public theme and logo are extracted into `src/`; the example HTML is a visual reference, and its design-tool support script is neither executed nor shipped. No new frontend framework, animation library, or backend is introduced.

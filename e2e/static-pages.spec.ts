@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test'
 import { expectLoaded, gpx, selectZip, zip } from './fixtures'
 
-test('project-path assets, private import, thumbnails, and schema-v2 writer handoff work without a backend', async ({ page }) => {
+test('project-path assets, Google font stylesheet, and private JSON handoff work without a backend', async ({ page }) => {
   const fixture = JSON.parse(readFileSync('fixtures/title-mapping-v2.json', 'utf8'))
   const requests: { url: string; method: string; body: string | null }[] = []
   page.on('request', (request) => requests.push({ url: request.url(), method: request.method(), body: request.postData() }))
@@ -36,7 +36,18 @@ test('project-path assets, private import, thumbnails, and schema-v2 writer hand
   for (const request of http) {
     expect(request.method).toBe('GET')
     expect(request.body).toBeNull()
-    expect(request.url).toMatch(/^http:\/\/127\.0\.0\.1:4175\/groomin\/(?:$|assets\/)/)
+    const url = new URL(request.url)
+    if (url.origin === 'https://fonts.googleapis.com') {
+      expect(url.pathname).toBe('/css2')
+      expect(url.searchParams.getAll('family')).toEqual([
+        'Bagel Fat One', 'Hanken Grotesk:ital,wght@0,300..900;1,300..900', 'Space Mono:wght@400;700',
+      ])
+      expect(url.searchParams.get('display')).toBe('swap')
+      expect(Array.from(url.searchParams.keys())).toEqual(['family', 'family', 'family', 'display'])
+    } else {
+      expect(request.url).toMatch(/^http:\/\/127\.0\.0\.1:4175\/groomin\/(?:$|assets\/)/)
+    }
   }
+  expect(http.some((request) => request.url.startsWith('https://fonts.googleapis.com/'))).toBe(true)
   expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0)
 })

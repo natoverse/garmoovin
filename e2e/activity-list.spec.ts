@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test'
 import { expectLoaded, expectMetadataRows, gpx, point, selectZip, track, zip } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
@@ -6,7 +6,8 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('explains local import and renders an accessible empty state', async ({ page }) => {
-  await expect(page.getByRole('heading', { name: 'Groomin.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Good routes. Better names.' })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Groomin logo' })).toBeVisible()
   await expect(page.getByText('Your activities will appear here')).toBeVisible()
   await expect(page.getByText('Read in your browser. Nothing uploaded, no Garmin login.')).toBeVisible()
   await page.keyboard.press('Tab')

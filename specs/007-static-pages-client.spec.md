@@ -47,3 +47,10 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 
 - Rename the repository, app title, package metadata, documentation, and production-path tests to Groomin. GitHub repository and `origin` use `natoverse/groomin`.
 - The Pages project path is `/groomin/` and the site address is `https://natoverse.github.io/groomin/`. Deploy only the static build as before; the local writer remains separate.
+
+## Supplied design decisions (2026-09-17)
+
+- Restyle the existing viewer using the supplied cream/brown/rust/amber/olive tokens, rounded panels, offset shadows, and readable focus/error/disabled states. Keep imports, filtering, grouping, drafts, export, and the standalone writer unchanged.
+- Display the supplied logo at the top of the app and README. Commit only the extracted public theme and optimized logo; keep the design ZIP ignored and do not ship its example HTML or support script.
+- Load Bagel Fat One, Hanken Grotesk, and Space Mono using the supplied Google Fonts CDN link with `display=swap` and local fallbacks. This explicitly permits public typography requests to Google's font domains, not activity uploads, analytics, or Garmin access. Document connection metadata and suppress referrers.
+- Preserve the `/groomin/` build path, accessible keyboard controls, contained mobile tables, and reduced-motion preferences. Browser tests stub the font service to verify fallback behavior without relying on external availability.

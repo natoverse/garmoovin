@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { expect, test, type Download, type Page } from '@playwright/test'
+import { expect, test, type Download, type Page } from './test'
 import { createTitleMappingExport, type TitleMappingExport } from '../src/title-edits'
 import { expectLoaded, gpx, selectZip, track, zip } from './fixtures'
 

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './test'
 import { digest, projectRoute, routeKey, THUMBNAIL_SETTINGS, type Route } from '../src/route'
 import { expectLoaded, gpx, selectZip, zip } from './fixtures'
 
@@ -354,11 +354,11 @@ test('clearing the cache does not redraw current images or allow pending work to
   await expectImage(page)
   expect(await page.evaluate(() => window.thumbnailProbe.renders)).toBe(2)
   expect((await cachedKeys(page)).length).toBe(1)
-  const imageUrl = await page.getByRole('img').getAttribute('src')
+  const imageUrl = await page.getByRole('img', { name: /^Route preview/ }).getAttribute('src')
   await page.getByRole('button', { name: 'Clear thumbnail cache' }).click()
   await expect(page.locator('.cache-notice')).toContainText('Thumbnail cache cleared.')
   expect(await cachedKeys(page)).toEqual([])
-  await expect(page.getByRole('img')).toHaveAttribute('src', imageUrl!)
+  await expect(page.getByRole('img', { name: /^Route preview/ })).toHaveAttribute('src', imageUrl!)
   expect(await page.evaluate(() => window.thumbnailProbe.renders)).toBe(2)
 })
 

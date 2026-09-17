@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test'
 import {
   SIMILARITY_LIMITS, SimilaritySession, type SimilarityActivity, type SimilarityGeometry,
 } from '../src/similarity'
