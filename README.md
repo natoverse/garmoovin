@@ -133,6 +133,8 @@ The frontend uses TypeScript, React, and Vite, following Stronger's conventions 
 
 See `MANIFESTO.md` for the product direction and specs 001–007 for the implemented scope. Spec 005 owns the standalone writer; spec 007 owns the static deployment and schema-v2 boundary.
 
+Planned: `specs/008-elevation-profiles.spec.md` adds a compact recorded-elevation profile beside each activity's route thumbnail; it is not implemented yet.
+
 ## Supplied visual design
 
 The app uses the supplied `theme.css` tokens for its cream background, brown ink, rust buttons, amber selections, olive focus rings, rounded panels, and offset shadows. The same supplied logo appears above the viewer and this README; it is an optimized JPEG preserving the original artwork and dimensions. Route previews use matching cream/rust colors with a new rendering-cache version.
