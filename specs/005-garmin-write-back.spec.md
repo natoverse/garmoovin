@@ -71,3 +71,9 @@ Report results per activity rather than presenting a partially successful batch 
 - Groomin is the application/repository name. New private storage defaults to `~/.groomin`, with `GROOMIN_JOURNAL_DIR` as the journal override.
 - Existing private storage and the former journal environment variable remain recognized with visible warnings. Ambiguous roots or conflicting overrides fail explicitly rather than bypassing an unresolved journal. No credentials or journals are automatically moved or discarded.
 - Garmin remains the external service name; the `garminconnect` dependency, `garmin_writer` module, and schema-v2 JSON contract are unchanged.
+
+## Confirmation prompt refinement (2026-09-17)
+
+- Blank or unrecognized confirmation input re-prompts instead of exiting. This prevents a queued newline from returning the user to the shell before they can type `APPLY`.
+- Only exact uppercase `APPLY` authorizes the displayed batch. Exact uppercase `CANCEL` exits without writes; Ctrl+C and end-of-input still interrupt. No REPL or unattended approval mode is introduced.
+- The shared confirmation behavior applies to both `apply` and `reconcile --apply`; all account, identity, conflict, journal, and read-back checks remain unchanged.

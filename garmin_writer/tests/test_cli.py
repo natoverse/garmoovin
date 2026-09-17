@@ -55,9 +55,29 @@ class CliTests(unittest.TestCase):
         self.assertIn("already_applied", self.output.getvalue())
 
     def test_confirmation_is_required_and_not_scriptable(self):
-        self.assertEqual(self.run_cli(["apply", str(self.mapping)], answer="no"), 1)
+        self.assertEqual(self.run_cli(["apply", str(self.mapping)], answer="CANCEL"), 1)
         self.assertEqual(self.run_cli(["apply", str(self.mapping)], tty=False), 1)
         self.assertEqual(self.fake.writes, [])
+
+    def test_blank_or_invalid_confirmation_keeps_waiting_without_writes(self):
+        answers = iter(["", "   ", "apply", "no", " APPLY ", "APPLY"])
+
+        def confirm(_prompt):
+            self.assertEqual(self.fake.writes, [])
+            return next(answers)
+
+        self.assertEqual(self.run_cli(["apply", str(self.mapping)], on_confirm=confirm), 0)
+        self.assertEqual(self.fake.writes, [("1", "Renamed 1"), ("2", "Renamed 2")])
+        self.assertEqual(self.output.getvalue().count("No writes authorized yet."), 5)
+
+    def test_blank_confirmation_can_be_cancelled_or_interrupted(self):
+        for ending, expected in [("CANCEL", 1), (EOFError(), 130), (KeyboardInterrupt(), 130)]:
+            with self.subTest(ending=ending):
+                self.assertEqual(
+                    self.run_cli(["apply", str(self.mapping)], on_confirm=["", ending]),
+                    expected,
+                )
+                self.assertEqual(self.fake.writes, [])
 
     def test_changes_to_file_after_review_cannot_alter_authorized_batch(self):
         def change_file(_prompt):

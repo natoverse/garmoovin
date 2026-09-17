@@ -31,7 +31,13 @@ def confirmed(batch: Batch) -> bool:
         print("Applying requires an interactive terminal. No writes sent.", file=sys.stderr)
         return False
     print(f"Review above: {eligible} eligible renames for account {json.dumps(batch.account.id)}.")
-    return input("Type APPLY to authorize only these reviewed renames: ") == "APPLY"
+    while True:
+        answer = input("Type APPLY to authorize only these reviewed renames, or CANCEL to exit: ")
+        if answer == "APPLY":
+            return True
+        if answer == "CANCEL":
+            return False
+        print("No writes authorized yet. Enter exactly APPLY or CANCEL; blank input does not exit.", flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
