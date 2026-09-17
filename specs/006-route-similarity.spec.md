@@ -59,3 +59,7 @@ Investigation of a privately supplied example confirmed the expected matches wit
 - Regrouping preserves drafts, original-title filtering, and complete JSON exports. Editing a title does not change the bundle heading or remount the active editor. Turning grouping off restores the ordinary newest-first list.
 - Do not add collapsing, bulk renaming, approval controls, or persistent review state in this iteration.
 - Cover matches-first ordering, consecutive numbering, membership boundaries, representative changes, live editing, missing/error states, and narrow-screen preview sizing with synthetic browser regressions.
+
+## Proposed caching revision (spec 009)
+
+- Spec 009 proposes persisting prepared similarity geometry by Garmin activity ID and numerical pair scores by unordered ID pair, with manual clearing after source changes. This would replace session-only persistence while retaining the existing matching, memory/work limits, filtered regrouping, and bundle presentation. Final groups remain transient; the current release is unchanged until implementation.
