@@ -82,6 +82,25 @@ test('noise reduction and arc-length sampling ignore raw sampling density', asyn
   session.dispose()
 })
 
+test('longitudinal jitter is noise-reduced without losing genuine gradual out-and-backs', async () => {
+  const jittered = route(Array.from({ length: 1001 }, (_, i): XY => [
+    i === 0 || i === 1000 ? i : Math.max(0, Math.min(1000, i + (i % 2 ? 2 : -2))),
+    0,
+  ]))
+  const session = new SimilaritySession()
+  const noisy = await ready(session, jittered)
+  expect(noisy.descriptor.length).toBeCloseTo(1000, 3)
+  expect(await matches(line(), jittered, 10)).toBe(true)
+  const slowReturn = route([
+    [0, 0], [1000, 0],
+    ...Array.from({ length: 1000 }, (_, i): XY => [999 - i, 0]),
+    [1000, 0],
+  ])
+  expect((await ready(session, slowReturn)).descriptor.length).toBeCloseTo(3000, 3)
+  expect(await matches(line(), slowReturn, 200)).toBe(false)
+  session.dispose()
+})
+
 test('bidirectional coverage rejects divergent loops on shared stems and one-way subsets', async () => {
   const a = route([[0, 0], [1000, 0], [1000, 400], [1400, 400], [1400, 0], [1000, 0], [0, 0]])
   const b = route([[0, 0], [1000, 0], [1000, -400], [1400, -400], [1400, 0], [1000, 0], [0, 0]])
@@ -198,6 +217,25 @@ test('missing, pending, failed, unmatched, and matched activities are each retai
   session.dispose()
 })
 
+test('relaxing tolerance can rearrange greedy groups instead of monotonically merging them', async () => {
+  const session = new SimilaritySession()
+  const activities = [
+    activity('a', await ready(session, line(0)), 4),
+    activity('b', await ready(session, line(80)), 3),
+    activity('c', await ready(session, line(40)), 2),
+    activity('d', await ready(session, line(120)), 1),
+  ]
+  expect(await session.group(activities, 50, signal())).toEqual([
+    { members: ['a', 'c'], status: 'matched' },
+    { members: ['b', 'd'], status: 'matched' },
+  ])
+  expect(await session.group(activities, 100, signal())).toEqual([
+    { members: ['a', 'b', 'c'], status: 'matched' },
+    { members: ['d'], status: 'unmatched' },
+  ])
+  session.dispose()
+})
+
 test('derived geometry reuse is session-local and independent of filenames and released raw points', async () => {
   const session = new SimilaritySession()
   const raw = line()
@@ -218,7 +256,7 @@ test('derived geometry reuse is session-local and independent of filenames and r
   other.dispose()
 })
 
-test('bounded descriptor caches evict reuse entries without invalidating activity-held descriptors', async () => {
+test('activity-held geometry is reusable even after eviction from the bounded strong cache', async () => {
   const session = new SimilaritySession()
   const first = await ready(session, line())
   for (let i = 1; i <= SIMILARITY_LIMITS.cachedDescriptors; i++) {
@@ -226,10 +264,39 @@ test('bounded descriptor caches evict reuse entries without invalidating activit
   }
   const rederived = await ready(session, line())
   expect(rederived.key).toBe(first.key)
-  expect(rederived.descriptor).not.toBe(first.descriptor)
+  expect(rederived.descriptor).toBe(first.descriptor)
   expect(await session.group([activity('a', first), activity('b', rederived)], 10, signal()))
     .toEqual([{ members: ['a', 'b'], status: 'matched' }])
   session.dispose()
+})
+
+test('session geometry budget includes descriptors retained by cards beyond the reuse cache', async () => {
+  const session = new SimilaritySession()
+  const held: SimilarityGeometry[] = []
+  const longRoute = line(0, 490_000)
+  let failure: SimilarityGeometry | undefined
+  const attempts = Math.ceil(SIMILARITY_LIMITS.retainedDescriptorBytes / (49_000 * 32)) + 1
+  for (let i = 0; i < attempts; i++) {
+    const geometry = await session.prepare(line(i * 30, 490_000), signal())
+    if (geometry.status === 'error') {
+      failure = geometry
+      break
+    }
+    expect(geometry.status).toBe('ready')
+    held.push(geometry)
+  }
+  expect(failure).toMatchObject({
+    status: 'error', message: expect.stringContaining('session geometry memory or descriptor limit'),
+  })
+  expect(held.length).toBeGreaterThan(1)
+  const duplicate = await ready(session, longRoute)
+  expect(duplicate.descriptor).toBe((held[0] as Extract<SimilarityGeometry, { status: 'ready' }>).descriptor)
+  const last = held.at(-1)!
+  expect(await session.group([activity('a', last), activity('b', last)], 10, signal())).toHaveLength(1)
+  session.dispose()
+  const replacement = new SimilaritySession()
+  expect((await replacement.prepare(longRoute, signal())).status).toBe('ready')
+  replacement.dispose()
 })
 
 test('pair scores are reused across tolerances, and geographic rejections do not poison looser matching', async () => {

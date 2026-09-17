@@ -163,7 +163,7 @@ export default function App() {
   const duplicateSourceFiles = new Set(progress?.duplicateSourceFiles ?? [])
   const hasBlockedChanges = changes.some((change) => duplicateSourceFiles.has(change.sourceFile))
   const { groups, analyzing } = useSimilarity(similarity.current, visibleActivities, grouping, tolerance)
-  const byId = new Map(visibleActivities.map((activity) => [activity.id, activity]))
+  const byId = new Map(grouping ? visibleActivities.map((activity) => [activity.id, activity]) : [])
   const groupById = new Map(groups.flatMap((group, index) => group.members.map((id) => [id, { group, index }] as const)))
   const orderedActivities = grouping
     ? groups.flatMap((group) => group.members.map((id) => byId.get(id)!))

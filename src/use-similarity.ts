@@ -16,10 +16,10 @@ export function useSimilarity(
 ) {
   const [result, setResult] = useState<AnalysisResult | null>(null)
   // Only membership/geometry changes restart work, not thumbnails or title drafts.
-  const signature = JSON.stringify(activities.map(({ id, sourceFile, date, geometry }) => [
+  const signature = enabled ? JSON.stringify(activities.map(({ id, sourceFile, date, geometry }) => [
     id, sourceFile, date, geometry.status,
     geometry.status === 'ready' ? geometry.key : geometry.status === 'error' ? geometry.message : '',
-  ]))
+  ])) : ''
 
   useEffect(() => {
     if (!enabled || !session) {
@@ -48,7 +48,7 @@ export function useSimilarity(
 
   const current = enabled && result !== null && result.session === session &&
     result.signature === signature && result.tolerance === tolerance ? result : null
-  const groups: SimilarityGroup[] = current?.groups ?? activities.map(({ id, geometry }) => ({
+  const groups: SimilarityGroup[] = !enabled ? [] : current?.groups ?? activities.map(({ id, geometry }) => ({
     members: [id],
     status: geometry.status === 'ready' ? 'pending' : geometry.status,
     message: geometry.status === 'error' ? geometry.message : undefined,

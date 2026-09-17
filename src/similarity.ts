@@ -2,7 +2,7 @@ import { compareActivities, type Activity } from './gpx'
 import { digest, type Coordinate, type Route } from './route'
 
 const EARTH_RADIUS = 6_371_008.8
-const VERSION = 'spherical-lines-v1:rdp5:sample10:d95:length80'
+const VERSION = 'spherical-lines-v2:rdp5:sample10:d95:length80'
 const SIMPLIFY_METRES = 5
 const SAMPLE_METRES = 10
 
@@ -18,6 +18,8 @@ export const SIMILARITY_LIMITS = {
   cachedDescriptors: 64,
   cachedDescriptorBytes: 16 * 1024 * 1024,
   cachedPairs: 10_000,
+  retainedDescriptors: 5_000,
+  retainedDescriptorBytes: 64 * 1024 * 1024,
 } as const
 
 export interface RouteDescriptor {
@@ -188,13 +190,15 @@ async function simplify(points: Vector[], work: Work): Promise<Vector[]> {
   keep[points.length - 1] = 1
   const stack: [number, number][] = [[0, points.length - 1]]
   const maximumError = chordSquared(SIMPLIFY_METRES)
+  const reversalTolerance = SIMPLIFY_METRES / EARTH_RADIUS
   while (stack.length) {
     const [start, end] = stack.pop()!
     if (end <= start + 1) continue
     const line = edge(points[start]!, points[end]!)
     let worst = maximumError
     let split = -1
-    let previous = 0
+    let maximumPosition = 0
+    let maximumIndex = start
     for (let i = start + 1; i < end; i++) {
       if (work.tick()) await work.pause()
       const point = points[i]!
@@ -205,12 +209,16 @@ async function simplify(points: Vector[], work: Work): Promise<Vector[]> {
       }
       if (line) {
         const position = along(point, line)
-        // RDP alone erases collinear out-and-backs and repeated laps.
-        if (position < previous - 1e-12 || position > line.angle + 1e-12) {
-          split = position < previous - 1e-12 && i > start + 1 ? i - 1 : i
+        // Preserve real reversals, but not sub-5 m longitudinal GPS jitter.
+        // Compare against maximum progress so many small steps back still count.
+        if (position < maximumPosition - reversalTolerance || position > line.angle + reversalTolerance) {
+          split = position < maximumPosition - reversalTolerance && maximumIndex > start ? maximumIndex : i
           break
         }
-        previous = position
+        if (position > maximumPosition) {
+          maximumPosition = position
+          maximumIndex = i
+        }
       }
     }
     if (!line && split < 0) split = Math.floor((start + end) / 2)
@@ -379,8 +387,10 @@ function limit(condition: boolean, message: string): void {
 export class SimilaritySession {
   private readonly lifetime = new AbortController()
   private readonly descriptors = new Map<string, Extract<SimilarityGeometry, { status: 'ready' }>>()
+  private readonly retained = new Map<string, { descriptor: WeakRef<RouteDescriptor>; bytes: number }>()
   private readonly pairs = new Map<string, number>()
   private cachedBytes = 0
+  private retainedBytes = 0
 
   async prepare(route: Route, signal: AbortSignal): Promise<SimilarityGeometry> {
     const work = new Work(signal, this.lifetime.signal, SIMILARITY_LIMITS.preparationWork)
@@ -427,12 +437,8 @@ export class SimilaritySession {
       if (!segments.length) return { status: 'missing' }
       const key = `${VERSION}:${await digest(canonical.buffer)}`
       work.check()
-      const cached = this.descriptors.get(key)
-      if (cached) {
-        this.descriptors.delete(key)
-        this.descriptors.set(key, cached)
-        return cached
-      }
+      const cached = this.lookup(key)
+      if (cached) return cached
       const lines: Edge[] = []
       const paths: { lines: Edge[]; length: number; samples: number }[] = []
       let length = 0
@@ -459,6 +465,8 @@ export class SimilaritySession {
         paths.push({ lines: path, length: pathLength, samples })
       }
       if (!lines.length) return { status: 'missing' }
+      const bytes = lines.length * 384 + sampleCount * 4 * Float64Array.BYTES_PER_ELEMENT
+      await this.checkCapacity(key, bytes, work)
       const samples = new Float64Array(sampleCount * 4)
       offset = 0
       for (const path of paths) {
@@ -484,10 +492,18 @@ export class SimilaritySession {
       }
       const tree = await buildTree(lines, work)
       work.check()
+      await this.checkCapacity(key, bytes, work)
+      work.check()
+      const concurrent = this.lookup(key)
+      if (concurrent) return concurrent
+      limit(this.exceedsCapacity(key, bytes),
+        'this archive exceeds the session geometry memory or descriptor limit. Try a smaller archive.')
       const descriptor: RouteDescriptor = Object.freeze({
         version: VERSION, length, segmentCount: paths.length, sampleCount,
       })
-      prepared.set(descriptor, { key, tree, samples, bytes: lines.length * 384 + samples.byteLength })
+      prepared.set(descriptor, { key, tree, samples, bytes })
+      this.retainedBytes += bytes - (this.retained.get(key)?.bytes ?? 0)
+      this.retained.set(key, { descriptor: new WeakRef(descriptor), bytes })
       const geometry = { status: 'ready', key, descriptor } as const
       this.cache(geometry)
       return geometry
@@ -499,6 +515,38 @@ export class SimilaritySession {
         message: error instanceof Error ? error.message : 'Route similarity preprocessing failed.',
       }
     }
+  }
+
+  private lookup(key: string): Extract<SimilarityGeometry, { status: 'ready' }> | undefined {
+    const cached = this.descriptors.get(key)
+    if (cached) {
+      this.descriptors.delete(key)
+      this.descriptors.set(key, cached)
+      return cached
+    }
+    const descriptor = this.retained.get(key)?.descriptor.deref()
+    if (!descriptor) return undefined
+    const geometry = { status: 'ready', key, descriptor } as const
+    this.cache(geometry)
+    return geometry
+  }
+
+  private exceedsCapacity(key: string, bytes: number): boolean {
+    return this.retainedBytes - (this.retained.get(key)?.bytes ?? 0) + bytes > SIMILARITY_LIMITS.retainedDescriptorBytes ||
+      this.retained.size + (this.retained.has(key) ? 0 : 1) > SIMILARITY_LIMITS.retainedDescriptors
+  }
+
+  private async checkCapacity(key: string, bytes: number, work: Work): Promise<void> {
+    if (!this.exceedsCapacity(key, bytes)) return
+    for (const [retainedKey, entry] of this.retained) {
+      if (!entry.descriptor.deref()) {
+        this.retained.delete(retainedKey)
+        this.retainedBytes -= entry.bytes
+      }
+      if (work.tick()) await work.pause()
+    }
+    limit(this.exceedsCapacity(key, bytes),
+      'this archive exceeds the session geometry memory or descriptor limit. Try a smaller archive.')
   }
 
   private cache(geometry: Extract<SimilarityGeometry, { status: 'ready' }>): void {
@@ -608,8 +656,14 @@ export class SimilaritySession {
 
   dispose(): void {
     this.lifetime.abort()
+    for (const entry of this.retained.values()) {
+      const descriptor = entry.descriptor.deref()
+      if (descriptor) prepared.delete(descriptor)
+    }
+    this.retained.clear()
     this.descriptors.clear()
     this.pairs.clear()
     this.cachedBytes = 0
+    this.retainedBytes = 0
   }
 }

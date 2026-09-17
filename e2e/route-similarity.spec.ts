@@ -254,7 +254,7 @@ test('superseded group calculations cannot publish stale memberships after slide
   await setTolerance(page, 100)
   await expect(page.locator('.similarity-count')).toContainText('Analysis pending')
   await selectZip(page, await zip([['new.gpx', route('Replacement only', 2000)]]), 'new.zip')
-  await expect(grouping(page)).toHaveCount(0)
+  await expect(page.locator('.activity-name').filter({ hasText: 'Green' })).toHaveCount(0)
   await releaseTimers(page)
   await expectLoaded(page, 1)
   await expect(grouping(page)).not.toBeChecked()
@@ -307,6 +307,21 @@ test('analysis failures retain activities and usable previews with an explanatio
   await expect(page.locator('.similarity-status').first()).toContainText('Synthetic analysis resource failure')
   await expect(page.getByRole('img', { name: 'Route preview for Analysis failure' })).toHaveJSProperty('naturalWidth', 240)
   await expect(page.locator('.similarity-status').last()).toContainText('No usable route')
+})
+
+test('over-limit routes remain visible without silently truncating their geometry', async ({ page }) => {
+  await page.goto('/')
+  await selectZip(page, await zip([
+    ['long.gpx', gpx('<trk><name>Beyond analysis limit</name><trkseg><trkpt lon="0" lat="0"/><trkpt lon="5" lat="0"/></trkseg></trk>')],
+    ['normal.gpx', route('Usable short route')],
+  ]))
+  await expectLoaded(page, 2)
+  await grouping(page).check()
+  await expectGroups(page, [['Usable short route'], ['Beyond analysis limit']])
+  await expect(page.locator('.similarity-status').last()).toContainText('Analysis unavailable')
+  await expect(page.locator('.similarity-status').last()).toContainText('not truncated')
+  await expect(page.getByRole('img', { name: 'Route preview for Beyond analysis limit' })).toHaveJSProperty('naturalWidth', 240)
+  await expect(page.getByRole('textbox', { name: 'New title for Beyond analysis limit (long.gpx)' })).toBeEnabled()
 })
 
 test('similarity controls fit narrow screens and remain available with empty filters', async ({ page }) => {

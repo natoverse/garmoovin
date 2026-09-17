@@ -30,6 +30,7 @@ export async function importArchive(
 ): Promise<ImportProgress> {
   const cacheGeneration = cache.generation
   const reader = new ZipReader(new BlobReader(file), { useWebWorkers: false })
+  let notification: ReturnType<typeof setTimeout> | undefined
   try {
     const entries = (await reader.getEntries()).filter(
       (entry) => !entry.directory && /\.gpx$/i.test(entry.filename),
@@ -47,7 +48,22 @@ export async function importArchive(
       issues: [...issues],
       duplicateSourceFiles,
     })
-    onProgress(snapshot(0))
+    let latestCompleted = 0
+    let lastPublished = -Infinity
+    const publish = (completed: number, immediate = false) => {
+      latestCompleted = completed
+      if (signal.aborted) return
+      if (immediate || performance.now() - lastPublished >= 16) {
+        clearTimeout(notification)
+        notification = undefined
+        lastPublished = performance.now()
+        onProgress(snapshot(completed))
+      } else if (notification === undefined) {
+        // Coalesce rapid geometry/image updates into one display frame, not one table render per callback.
+        notification = setTimeout(() => publish(latestCompleted, true), 16)
+      }
+    }
+    publish(0, true)
     for (const [index, entry] of entries.entries()) {
       signal.throwIfAborted()
       let parsed: ReturnType<typeof parseGpx> | undefined
@@ -70,21 +86,20 @@ export async function importArchive(
         }
         const activityIndex = activities.length
         activities.push(activity)
-        onProgress(snapshot(index + 1))
-        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        publish(index + 1, activities.length === 1)
         const route = parsed.route
         await Promise.all([
           (async () => {
             let geometry: SimilarityGeometry
             try {
-              geometry = await similarity.prepare(route, signal)
+              geometry = route.length ? await similarity.prepare(route, signal) : { status: 'missing' }
             } catch (error) {
               signal.throwIfAborted()
               geometry = { status: 'error', message: error instanceof Error ? error.message : 'Route analysis failed.' }
             }
             signal.throwIfAborted()
             activities[activityIndex] = { ...activities[activityIndex]!, geometry }
-            onProgress(snapshot(index + 1))
+            publish(index + 1)
           })(),
           (async () => {
             let thumbnail: Thumbnail
@@ -97,16 +112,17 @@ export async function importArchive(
             }
             signal.throwIfAborted()
             activities[activityIndex] = { ...activities[activityIndex]!, thumbnail }
-            onProgress(snapshot(index + 1))
+            publish(index + 1)
           })(),
         ])
       }
-      onProgress(snapshot(index + 1))
+      publish(index + 1)
       // Release the event loop between files so progress and replacement imports stay interactive.
       await new Promise<void>((resolve) => setTimeout(resolve, 0))
     }
     return snapshot(entries.length)
   } finally {
+    clearTimeout(notification)
     await reader.close()
   }
 }
