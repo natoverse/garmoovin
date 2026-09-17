@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './test'
-import { expectLoaded, gpx, selectZip, zip } from './fixtures'
+import { expectActivityNames, expectLoaded, gpx, selectZip, zip } from './fixtures'
 
 declare global {
   interface Window {
@@ -72,7 +72,7 @@ test('shows all distinct activity types selected, with all/none buttons and no A
   await expect(page.getByRole('button', { name: 'All', exact: true })).toHaveCount(0)
   await expect(search(page)).toBeEmpty()
   await expectCount(page, 6)
-  await expect(page.locator('.activity-name')).toHaveText([
+  await expectActivityNames(page, [
     'Literal [loop].*', 'Greenway Outing', 'Green Mountain', 'Green Mountain Loop', 'Riverside Ride', 'Meadow Stroll',
   ])
 })
@@ -92,10 +92,10 @@ test('independently toggles multiple types and supports keyboard activation', as
   await page.keyboard.press('Enter')
   await expect(typeTag(page, 'Hiking')).toHaveAttribute('aria-pressed', 'false')
   await expectCount(page, 1)
-  await expect(page.locator('.activity-name')).toHaveText(['Green Mountain Loop'])
+  await expectActivityNames(page, ['Green Mountain Loop'])
   await typeTag(page, 'Unknown').click()
   await expectCount(page, 2)
-  await expect(page.locator('.activity-name')).toHaveText(['Green Mountain Loop', 'Meadow Stroll'])
+  await expectActivityNames(page, ['Green Mountain Loop', 'Meadow Stroll'])
 })
 
 test('matches case-insensitive literal substrings, including partial words and punctuation', async ({ page }) => {
@@ -117,7 +117,7 @@ test('combines type and name filters while retaining every tag and the full load
   await search(page).fill('green')
   await typeTag(page, 'Hiking').click()
   await expectCount(page, 1)
-  await expect(page.locator('.activity-name')).toHaveText(['Green Mountain Loop'])
+  await expectActivityNames(page, ['Green Mountain Loop'])
   await typeTag(page, 'Running').click()
   await expectCount(page, 0)
   await expect(page.getByRole('heading', { name: 'No activities match your search' })).toBeVisible()
@@ -132,7 +132,7 @@ test('combines type and name filters while retaining every tag and the full load
   await typeTag(page, 'Hiking').click()
   await search(page).fill('')
   await expectCount(page, 3)
-  await expect(page.locator('.activity-name')).toHaveText(['Green Mountain Loop', 'Riverside Ride', 'Meadow Stroll'])
+  await expectActivityNames(page, ['Green Mountain Loop', 'Riverside Ride', 'Meadow Stroll'])
 })
 
 test('search uses the existing metadata-name and filename fallbacks', async ({ page }) => {
@@ -144,7 +144,7 @@ test('search uses the existing metadata-name and filename fallbacks', async ({ p
   await expectCount(page, 2, 2)
   await search(page).fill('filename')
   await expectCount(page, 1, 2)
-  await expect(page.locator('.activity-name')).toHaveText(['green-filename.gpx'])
+  await expectActivityNames(page, ['green-filename.gpx'])
 })
 
 test('replacement imports reset filters, while cancelling file selection preserves them', async ({ page }) => {
@@ -161,7 +161,7 @@ test('replacement imports reset filters, while cancelling file selection preserv
   await expect(tags(page)).toHaveText(['Walking'])
   await expect(typeTag(page, 'Walking')).toHaveAttribute('aria-pressed', 'true')
   await expectCount(page, 1, 1)
-  await expect(page.locator('.activity-name')).toHaveText(['New activity'])
+  await expectActivityNames(page, ['New activity'])
 })
 
 test('filtering reuses loaded metadata and images, even after their disk cache is cleared', async ({ page }) => {

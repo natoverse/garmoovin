@@ -23,7 +23,7 @@ Dates are labeled UTC. Missing names fall back to GPX metadata or the filename; 
 
 Activity-type tags appear above the list, with every type initially selected. Click tags to independently toggle types, or use **Select all** and **Select none**. Multiple selected types are combined; a type's tag stays available even when the current search has no matches for it.
 
-**Search activity names** matches any literal part of a displayed name, ignoring case and leading/trailing search whitespace. `green`, `GREEN`, and `gree` match "Green Mountain"; `green loop` does not match "Green Mountain Loop". Search applies within the selected types, and clearing it does not restore deselected types.
+**Search activity names** matches any literal part of an imported name, ignoring case and leading/trailing search whitespace. It does not search edited drafts. `green`, `GREEN`, and `gree` match "Green Mountain"; `green loop` does not match "Green Mountain Loop". Search applies within the selected types, and clearing it does not restore deselected types.
 
 The list reports **Showing X of Y activities**, preserving newest-first order and existing previews without re-importing files or regenerating thumbnails. Filters work during import: newly discovered types follow the most recent Select all/none choice, while individual toggles remain in effect. Choosing another archive resets the search and selects all its types. Filters are not saved across sessions.
 
@@ -37,7 +37,7 @@ Images are generated in the browser and reused from a local cache when reopening
 
 ## Elevation profiles
 
-The **Elevation** column sits directly beside **Route**, including in grouped results. It shows recorded GPX elevation in meters against cumulative horizontal distance in kilometers, in trackpoint order. Both preview rectangles are the same size: 120 x 80 pixels on wider screens and 90 x 60 pixels on narrow screens. The elevation rectangle contains only the chart; its elevation range and distance appear below the activity name in the main details area. Each preview fits its own scales, so equal-sized previews do not imply equal distances or climbs. Flat recordings show a horizontal line. These are recorded measurements, not corrected terrain data or ascent/descent statistics.
+The **Elevation** column sits directly beside **Route**, including in grouped results. It shows recorded GPX elevation in meters against cumulative horizontal distance in kilometers, in trackpoint order. Both preview rectangles are the same size: 120 x 80 pixels on wider screens and 90 x 60 pixels on narrow screens. The elevation rectangle contains only the rust-500 chart, distinct from the darker route stroke; its elevation range and distance appear below the editable title in the main details area. Each preview fits its own scales, so equal-sized previews do not imply equal distances or climbs. Flat recordings show a horizontal line. These are recorded measurements, not corrected terrain data or ascent/descent statistics.
 
 Separate tracks, segments, invalid coordinates, and missing or invalid elevations break the profile line. Distance still accumulates through missing elevation samples when coordinates are valid, but never adds a jump across a track, segment, or invalid-coordinate gap. **Partial data / gaps** appears with the activity statistics to identify disconnected or incomplete profiles without changing the preview size. Isolated elevation samples and stationary-only runs are not drawn or included in the displayed elevation range; at least one connected run with elevation at distinct distances is required.
 
@@ -47,13 +47,17 @@ Profiles are prepared once per import and reused when filtering, grouping, or dr
 
 ## Title edits and JSON export
 
-Enter a **New title** beside an activity's original name. Drafts remain attached to their individual activities while filtering, searching, or loading thumbnails. Search continues to use the original name. Empty, whitespace-only, and unchanged titles create no proposal; leading/trailing whitespace is removed from exported titles without changing what you typed.
+Every activity has one editable **Title**, prefilled with its imported name. Click or tab into it to draft a rename in place. The field looks like title text at rest, with a subtle border on hover and a clear focus ring while editing. There is no separate New title column.
+
+Press Enter or move focus away to finish editing; press Escape to discard that activity's draft and restore its imported name. A blank or whitespace-only field can remain empty while you type, but restores the imported name when you leave it. Blank, whitespace-only, and unchanged titles create no proposal; leading/trailing whitespace is removed from exported titles without changing what you typed.
+
+Drafts remain attached to their individual activities while filtering, searching, or loading thumbnails. Search and grouping labels continue to use imported names, so editing a title cannot remove its row mid-edit. Imported names remain unchanged internally and supply `originalTitle` in the JSON; editing never rewrites a GPX file.
 
 **Save JSON** shows the total proposal count and downloads `garmin-title-mappings.json`, including changes for hidden rows. Each export is a complete current snapshot, not an incremental patch. Schema version **2** includes the ZIP fingerprint and the identity evidence needed by the separate writer; the exact contract is below. Missing evidence, duplicate GPX paths (including unreadable duplicates), or multiple proposals for one target ID block download with visible per-source reasons, even for hidden rows. Clear affected proposals before saving; no partial file is silently exported. Browsing and drafting still work for activities that cannot be exported.
 
 Export becomes available when import finishes. The ZIP fingerprint is computed on the first export and reused for that selected file. You can keep editing while JSON is prepared; those later edits are not silently included in an already requested snapshot. The browser handles the download location and filename, and the app cannot verify that you completed saving it to disk. No GPX files or Garmin activities are changed.
 
-Drafts remain after export, but are not restored after leaving the page. Replacing an archive asks before discarding proposals that differ from the latest export; browser navigation warns where supported. Save before leaving rather than relying on navigation warnings, especially on mobile. Browser downloads are separate files: clearing a draft does not rewrite an earlier export.
+Drafts remain after export, but are not restored after leaving the page. Replacing an archive asks before discarding proposals that differ from the latest export; browser navigation warns where supported. Save before leaving rather than relying on navigation warnings, especially on mobile. Browser downloads are separate files: restoring an imported title does not rewrite an earlier export.
 
 ### JSON handoff: schema version 2
 

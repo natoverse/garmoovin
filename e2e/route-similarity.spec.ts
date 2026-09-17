@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './test'
-import { expectLoaded, gpx, selectZip, zip } from './fixtures'
+import { expectActivityNames, expectLoaded, gpx, selectZip, zip } from './fixtures'
 
 declare global {
   interface Window {
@@ -45,7 +45,7 @@ async function expectGroups(page: Page, expected: string[][]) {
     for (const row of rows) {
       const key = row.getAttribute('data-route-group')!
       const names = groups.get(key) ?? []
-      names.push(row.querySelector('.activity-name')!.textContent!)
+      names.push(row.querySelector<HTMLInputElement>('.activity-name')!.value)
       groups.set(key, names)
     }
     return [...groups.values()]
@@ -127,7 +127,7 @@ test('starts off, uses an accessible metre slider, and never chains pair matches
   await expect(tolerance(page)).toHaveValue('200')
   await expectGroups(page, [['Green A', 'Green B', 'Green C'], ['Far away'], ['No geometry']])
   await grouping(page).uncheck()
-  await expect(page.locator('.activity-name')).toHaveText(['Green A', 'Green B', 'Green C', 'Far away', 'No geometry'])
+  await expectActivityNames(page, ['Green A', 'Green B', 'Green C', 'Far away', 'No geometry'])
   await expect(page.locator('.section-heading')).toContainText('Newest first')
   await expect(page.locator('.similarity-status')).toHaveCount(0)
 })
@@ -169,22 +169,22 @@ test('grouped ordering uses representatives, source-path ties and unknown dates;
   await page.getByRole('button', { name: 'Cycling', exact: true }).click()
   await expectGroups(page, [['Tie B', 'Unknown date'], ['Middle'], ['Repeat oldest']])
   await grouping(page).uncheck()
-  await expect(page.locator('.activity-name')).toHaveText(['Tie B', 'Middle', 'Repeat oldest', 'Unknown date'])
+  await expectActivityNames(page, ['Tie B', 'Middle', 'Repeat oldest', 'Unknown date'])
 })
 
 test('drafts survive regrouping under original-title search and hidden drafts export exactly once', async ({ page }) => {
   await setup(page)
   await search(page).fill('green')
-  const aTitle = page.getByRole('textbox', { name: 'New title for Green A (garmin-1.gpx)', exact: true })
+  const aTitle = page.getByRole('textbox', { name: 'Title for Green A (garmin-1.gpx)', exact: true })
   await aTitle.fill('First proposed name')
-  await page.getByRole('textbox', { name: 'New title for Green C (garmin-3.gpx)', exact: true }).fill('Hidden proposed name')
+  await page.getByRole('textbox', { name: 'Title for Green C (garmin-3.gpx)', exact: true }).fill('Hidden proposed name')
   await grouping(page).check()
-  await expectGroups(page, [['Green A', 'Green B'], ['Green C']])
+  await expectGroups(page, [['First proposed name', 'Green B'], ['Hidden proposed name']])
   await setTolerance(page, 100)
-  await expectGroups(page, [['Green A', 'Green B', 'Green C']])
+  await expectGroups(page, [['First proposed name', 'Green B', 'Hidden proposed name']])
   await expect(aTitle).toHaveValue('First proposed name')
   await search(page).fill('green a')
-  await expectGroups(page, [['Green A']])
+  await expectGroups(page, [['First proposed name']])
   await expect(page.getByRole('button', { name: 'Save JSON (2)' })).toBeEnabled()
   const downloading = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save JSON (2)' }).click()
@@ -246,7 +246,7 @@ test('superseded group calculations cannot publish stale memberships after slide
   await search(page).fill('green c')
   await setTolerance(page, 10)
   await expect(page.locator('tbody tr')).toHaveCount(1)
-  await expect(page.locator('.activity-name')).toHaveText(['Green C'])
+  await expectActivityNames(page, ['Green C'])
   await releaseTimers(page)
   await expectGroups(page, [['Green C']])
   await search(page).fill('')
@@ -254,7 +254,7 @@ test('superseded group calculations cannot publish stale memberships after slide
   await setTolerance(page, 100)
   await expect(page.locator('.similarity-count')).toContainText('Analysis pending')
   await selectZip(page, await zip([['new.gpx', route('Replacement only', 2000)]]), 'new.zip')
-  await expect(page.locator('.activity-name').filter({ hasText: 'Green' })).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: /^Title for Green/ })).toHaveCount(0)
   await releaseTimers(page)
   await expectLoaded(page, 1)
   await expect(grouping(page)).not.toBeChecked()
@@ -278,7 +278,7 @@ test('several-hundred-route import stays replaceable with unfinished analysis an
   await expect(page.locator('.similarity-status')).toHaveText('Analysis pending')
   await search(page).fill('route 0')
   await setTolerance(page, 120)
-  const draft = page.getByRole('textbox', { name: 'New title for Route 0 (0.gpx)', exact: true })
+  const draft = page.getByRole('textbox', { name: 'Title for Route 0 (0.gpx)', exact: true })
   await draft.fill('Keep draft')
   page.once('dialog', (dialog) => dialog.dismiss())
   const replacement = await zip([['fresh.gpx', route('Fresh')]])
@@ -289,8 +289,8 @@ test('several-hundred-route import stays replaceable with unfinished analysis an
   await selectZip(page, replacement)
   await releaseTimers(page)
   await expectLoaded(page, 1)
-  await expect(page.locator('.activity-name')).toHaveText(['Fresh'])
-  await expect(page.getByRole('textbox')).toBeEmpty()
+  await expectActivityNames(page, ['Fresh'])
+  await expect(page.getByRole('textbox')).toHaveValue('Fresh')
   await expect(grouping(page)).not.toBeChecked()
   await expect(tolerance(page)).toHaveValue('50')
 })
@@ -321,7 +321,7 @@ test('over-limit routes remain visible without silently truncating their geometr
   await expect(page.locator('.similarity-status').last()).toContainText('Analysis unavailable')
   await expect(page.locator('.similarity-status').last()).toContainText('not truncated')
   await expect(page.getByRole('img', { name: 'Route preview for Beyond analysis limit' })).toHaveJSProperty('naturalWidth', 240)
-  await expect(page.getByRole('textbox', { name: 'New title for Beyond analysis limit (long.gpx)' })).toBeEnabled()
+  await expect(page.getByRole('textbox', { name: 'Title for Beyond analysis limit (long.gpx)' })).toBeEnabled()
 })
 
 test('similarity controls fit narrow screens and remain available with empty filters', async ({ page }) => {

@@ -51,3 +51,8 @@ Use the selected GPX file's recorded elevations only, with labeled distance (km)
 - Move the visible elevation range, distance, and partial-data notice out of the elevation rectangle and into the main activity details area below the original name. Preserve metric units, recorded-data semantics, and the chart's accessible range/distance description; this is a layout change, not a change to measurements.
 - Keep both preview rectangles exactly the same size using shared styles: 120 x 80 pixels above the 600-pixel breakpoint and 90 x 60 pixels at or below it. Apply the same dimensions to ready, pending, missing-data, and error states; text statistics must not change the rectangle's height.
 - Fill the elevation rectangle with its chart while retaining independent scales and a legible stroke. Keep statistics associated with the correct activity when filtering, grouping, or editing titles, without including statistics in name search or exported titles.
+
+## Color refinement decisions (2026-09-17)
+
+- Use the existing `--color-rust-500` token (`#D2692C`) for the elevation line as a distinct accent. Route thumbnails keep their darker rust-600 stroke; no route-cache version change is needed.
+- Keep statistics in the activity details area below the unified inline title editor described in spec 004. Chart dimensions, measurements, accessibility, and persistence remain unchanged.
