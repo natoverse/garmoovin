@@ -48,6 +48,11 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 - Rename the repository, app title, package metadata, documentation, and production-path tests to Groomin. GitHub repository and `origin` use `natoverse/groomin`.
 - The Pages project path is `/groomin/` and the site address is `https://natoverse.github.io/groomin/`. Deploy only the static build as before; the local writer remains separate.
 
+## Deployment iteration decisions (2026-09-17)
+
+- Superseding the original deployment test gate, `Deploy Pages` runs `npm ci` and `npm run build` before uploading `dist`, without installing Playwright browsers or running `npm test`. The build remains explicit because the browser suite previously invoked it through its web server configuration.
+- Browser coverage remains in the `Check` workflow for pull requests and pushes; deployment does not repeat those tests.
+
 ## Supplied design decisions (2026-09-17)
 
 - Restyle the existing viewer using the supplied cream/brown/rust/amber/olive tokens, rounded panels, offset shadows, and readable focus/error/disabled states. Keep imports, filtering, grouping, drafts, export, and the standalone writer unchanged.

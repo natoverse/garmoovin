@@ -9,7 +9,7 @@ A personal Garmin activity cleanup companion to Stronger, with two independent u
 
 ## GitHub Pages
 
-The website's project path is `/groomin/`, with its Pages address at `https://natoverse.github.io/groomin/` after deployment. In the repository's **Settings → Pages**, select **GitHub Actions** as the source before the first deployment. The **Deploy Pages** workflow runs the browser suite, builds, and publishes only Vite's `dist` artifact when changes reach `main`; it can also be dispatched on `main`. The feature branch itself does not deploy.
+The website's project path is `/groomin/`, with its Pages address at `https://natoverse.github.io/groomin/` after deployment. In the repository's **Settings → Pages**, select **GitHub Actions** as the source before the first deployment. The **Deploy Pages** workflow builds and publishes only Vite's `dist` artifact when changes reach `main`; it can also be dispatched on `main`. Browser tests run in the **Check** workflow for pull requests and pushes, not during deployment. The feature branch itself does not deploy.
 
 There is no website backend, localhost bridge, Garmin login, or Apply to Garmin button. Hosting serves code only. The Python CLI, credentials, journals, archives, and downloads are not deployment artifacts. A Pages website can be publicly accessible even when its source repository is private; private activity files must never be added to the published assets.
 
