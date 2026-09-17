@@ -16,6 +16,7 @@ export interface ImportProgress {
   total: number
   activities: ImportedActivity[]
   issues: ImportIssue[]
+  duplicateSourceFiles: string[]
 }
 
 export async function importArchive(
@@ -31,6 +32,9 @@ export async function importArchive(
       (entry) => !entry.directory && /\.gpx$/i.test(entry.filename),
     )
     signal.throwIfAborted()
+    const sourceCounts = new Map<string, number>()
+    for (const entry of entries) sourceCounts.set(entry.filename, (sourceCounts.get(entry.filename) ?? 0) + 1)
+    const duplicateSourceFiles = Array.from(sourceCounts).filter(([, count]) => count > 1).map(([path]) => path)
     const activities: ImportedActivity[] = []
     const issues: ImportIssue[] = []
     const snapshot = (completed: number): ImportProgress => ({
@@ -38,6 +42,7 @@ export async function importArchive(
       total: entries.length,
       activities: [...activities].sort(compareActivities),
       issues: [...issues],
+      duplicateSourceFiles,
     })
     onProgress(snapshot(0))
     for (const [index, entry] of entries.entries()) {

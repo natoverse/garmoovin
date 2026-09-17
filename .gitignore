@@ -1,6 +1,7 @@
 /garmin-gpx-export.zip
 *.[zZ][iI][pP]
 *.[gG][pP][xX]
+garmin-title-mappings*.json
 /local-data/
 /node_modules/
 /dist/

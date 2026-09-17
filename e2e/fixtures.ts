@@ -26,6 +26,6 @@ export async function expectLoaded(page: Page, count: number, skipped = 0) {
 
 export async function expectMetadataRows(page: Page, rows: string[]) {
   await expect.poll(() => page.locator('tbody tr').evaluateAll((elements) =>
-    elements.map((row) => Array.from(row.querySelectorAll('td:not(.route-cell)'), (cell) => cell.textContent).join('')),
+    elements.map((row) => Array.from(row.querySelectorAll('td:not(.route-cell):not(.title-edit-cell)'), (cell) => cell.textContent).join('')),
   )).toEqual(rows)
 }

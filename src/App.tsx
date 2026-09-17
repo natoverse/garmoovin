@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { importArchive, type ImportProgress } from './archive'
 import { formatDate } from './gpx'
+import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
 import { ThumbnailCache } from './thumbnail-cache'
+import { createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload } from './title-edits'
 import './App.css'
 
 type ImportState =
@@ -20,20 +22,42 @@ export default function App() {
   const [state, setState] = useState<ImportState>({ phase: 'idle' })
   const [search, setSearch] = useState('')
   const [typeSelection, setTypeSelection] = useState<TypeSelection>({ defaultSelected: true, exceptions: new Set() })
+  const [drafts, setDrafts] = useState<Map<string, string>>(() => new Map())
+  const [lastExportSignature, setLastExportSignature] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [exportNotice, setExportNotice] = useState<{ error: boolean; message: string } | null>(null)
   const [cacheNotice, setCacheNotice] = useState<{ warning: boolean; message: string } | null>(null)
   const [clearingCache, setClearingCache] = useState(false)
   const [cache] = useState(() => new ThumbnailCache((message) => setCacheNotice({ warning: true, message })))
   const currentImport = useRef<AbortController | null>(null)
-  useEffect(() => () => currentImport.current?.abort(), [])
+  const archiveFile = useRef<File | null>(null)
+  const archiveFingerprint = useRef<string | null>(null)
+  const downloadUrl = useRef<string | null>(null)
+  useEffect(() => () => {
+    currentImport.current?.abort()
+    if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current)
+  }, [])
 
   async function selectArchive(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
     if (!file) return
+    if (saving) {
+      setExportNotice({ error: true, message: 'Wait for the JSON export to finish before opening another archive.' })
+      return
+    }
+    if (hasUnexportedChanges && !window.confirm('You have title changes that are not in the latest JSON export. Discard these drafts and open another archive?')) return
 
     currentImport.current?.abort()
     const controller = new AbortController()
     currentImport.current = controller
+    archiveFile.current = file
+    archiveFingerprint.current = null
+    if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current)
+    downloadUrl.current = null
+    setDrafts(new Map())
+    setLastExportSignature(null)
+    setExportNotice(null)
     setSearch('')
     setTypeSelection({ defaultSelected: true, exceptions: new Set() })
     setState({ phase: 'loading', archiveName: file.name, progress: null })
@@ -49,6 +73,43 @@ export default function App() {
         archiveName: file.name,
         message: error instanceof Error ? error.message : 'The file could not be read.',
       })
+    }
+  }
+
+  function editTitle(id: string, value: string) {
+    setDrafts((current) => {
+      const next = new Map(current)
+      if (value === '') next.delete(id)
+      else next.set(id, value)
+      return next
+    })
+  }
+
+  async function saveTitles() {
+    if (saving) return
+    const file = archiveFile.current
+    if (!file || state.phase !== 'complete') {
+      setExportNotice({ error: true, message: 'Finish opening an archive before exporting title changes.' })
+      return
+    }
+    const snapshot = changes
+    const snapshotSignature = changesSignature
+    setSaving(true)
+    setExportNotice(null)
+    try {
+      const fingerprint = archiveFingerprint.current ?? await digest(await file.arrayBuffer())
+      if (archiveFile.current !== file) throw new Error('The archive changed during export. Review your current proposals and try again.')
+      archiveFingerprint.current = fingerprint
+      const mapping = createTitleMappingExport(fingerprint, snapshot, duplicateSourceFiles)
+      const url = requestTitleMappingDownload(mapping)
+      if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current)
+      downloadUrl.current = url
+      setLastExportSignature(snapshotSignature)
+      setExportNotice({ error: false, message: `JSON download requested for ${snapshot.length} ${snapshot.length === 1 ? 'rename' : 'renames'}. Check your browser's downloads; no changes were sent to Garmin.` })
+    } catch (error) {
+      setExportNotice({ error: true, message: `Could not create JSON export. ${error instanceof Error ? error.message : 'Please try again.'}` })
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -84,6 +145,21 @@ export default function App() {
   )
   const issues = progress?.issues ?? []
   const loading = state.phase === 'loading'
+  const changes = pendingTitleChanges(activities, drafts)
+  const changesSignature = JSON.stringify(changes)
+  const hasUnexportedChanges = changes.length > 0 && changesSignature !== lastExportSignature
+  const duplicateSourceFiles = new Set(progress?.duplicateSourceFiles ?? [])
+  const hasBlockedChanges = changes.some((change) => duplicateSourceFiles.has(change.sourceFile))
+
+  useEffect(() => {
+    if (!hasUnexportedChanges) return
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = 'You have unexported title changes.'
+    }
+    window.addEventListener('beforeunload', warnBeforeLeaving)
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
+  }, [hasUnexportedChanges])
 
   return (
     <main>
@@ -105,7 +181,7 @@ export default function App() {
         </div>
         <label className="file-picker">
           <span>{state.phase === 'idle' ? 'Open GPX ZIP' : 'Choose another ZIP'}</span>
-          <input type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={selectArchive} aria-label="Open GPX ZIP" />
+          <input type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={selectArchive} aria-label="Open GPX ZIP" disabled={saving} />
         </label>
       </section>
 
@@ -168,6 +244,27 @@ export default function App() {
       )}
 
       <section className="activity-section" aria-labelledby="activities-heading">
+        {activities.length > 0 && (
+          <div className="title-export-panel">
+            <div className="export-toolbar">
+              <div>
+                <h2>Proposed title changes</h2>
+                <p>Draft a new title beside the original. Save exports all proposals, including hidden rows.</p>
+              </div>
+              <button type="button" className="primary-button" disabled={saving || loading || changes.length === 0 || hasBlockedChanges} onClick={saveTitles}>
+                {saving ? 'Preparing JSON...' : `Save JSON (${changes.length})`}
+              </button>
+            </div>
+            <p className="draft-status" aria-live="polite">
+              {loading ? 'You can draft titles now. Export is available once the archive finishes loading.'
+                : hasUnexportedChanges ? 'There are title changes not included in the latest JSON export.'
+                : changes.length > 0 ? 'Current proposals match the latest requested export. Drafts remain editable.'
+                : 'Leave a new title empty to keep the existing title. No changes are made to Garmin.'}
+            </p>
+            {hasBlockedChanges && <p className="export-error" role="alert">Some proposed renames have duplicate GPX paths. Clear those proposals or open an archive with unique paths before saving. No partial file will be exported.</p>}
+            {exportNotice && <p className={exportNotice.error ? 'export-error' : 'export-notice'} role={exportNotice.error ? 'alert' : undefined} aria-live={exportNotice.error ? undefined : 'polite'}>{exportNotice.message}</p>}
+          </div>
+        )}
         <div className="section-heading">
           <h2 id="activities-heading">Activities <span className="count">{visibleActivities.length}</span></h2>
           <p>Newest first <span aria-hidden="true">/</span> Dates in UTC</p>
@@ -177,12 +274,26 @@ export default function App() {
           <div className="table-container" role="region" aria-label="Scrollable activity list" tabIndex={0}>
             <table>
               <caption className="visually-hidden">Activities with north-up route previews, newest first. Dates are in UTC.</caption>
-              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="name-heading">Name</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
+              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="name-heading">Name</th><th scope="col" className="title-edit-heading">New title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
               <tbody>
                 {visibleActivities.map((activity) => (
                   <tr key={activity.id}>
                     <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
                     <td className="activity-name" title={activity.sourceFile}>{activity.name}</td>
+                    <td className="title-edit-cell">
+                      <label className="visually-hidden" htmlFor={`new-title-${activity.id}`}>New title for {activity.name} ({activity.sourceFile})</label>
+                      <input
+                        id={`new-title-${activity.id}`}
+                        type="text"
+                        value={drafts.get(activity.id) ?? ''}
+                        onChange={(event) => editTitle(activity.id, event.currentTarget.value)}
+                        placeholder="Leave blank to keep title"
+                        autoComplete="off"
+                        spellCheck={false}
+                        aria-describedby={duplicateSourceFiles.has(activity.sourceFile) ? `duplicate-path-${activity.id}` : undefined}
+                      />
+                      {duplicateSourceFiles.has(activity.sourceFile) && <p className="field-error" id={`duplicate-path-${activity.id}`}>Duplicate GPX path: {activity.sourceFile}. Renames for this path cannot be exported.</p>}
+                    </td>
                     <td><span className="type-label">{activity.type}</span></td>
                     <td className="activity-date">{activity.date === null ? 'Unknown' : (
                       <time dateTime={new Date(activity.date).toISOString()}>{formatDate(activity.date)}</time>
@@ -219,7 +330,7 @@ export default function App() {
         </section>
       )}
 
-      <footer>Read-only archive viewer. No changes are made to Garmin Connect.</footer>
+      <footer>Source GPX files stay unchanged. No changes are made to Garmin Connect.</footer>
     </main>
   )
 }
