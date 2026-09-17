@@ -1,9 +1,11 @@
 import { BlobReader, TextWriter, ZipReader } from '@zip.js/zip.js'
 import { compareActivities, parseGpx, type Activity } from './gpx'
+import { SimilaritySession, type SimilarityGeometry } from './similarity'
 import { ThumbnailCache, type Thumbnail } from './thumbnail-cache'
 
-interface ImportedActivity extends Activity {
+export interface ImportedActivity extends Activity {
   thumbnail: Thumbnail
+  geometry: SimilarityGeometry
 }
 
 export interface ImportIssue {
@@ -24,6 +26,7 @@ export async function importArchive(
   signal: AbortSignal,
   onProgress: (progress: ImportProgress) => void,
   cache: ThumbnailCache,
+  similarity: SimilaritySession,
 ): Promise<ImportProgress> {
   const cacheGeneration = cache.generation
   const reader = new ZipReader(new BlobReader(file), { useWebWorkers: false })
@@ -62,20 +65,41 @@ export async function importArchive(
         })
       }
       if (parsed) {
-        const activity: ImportedActivity = { ...parsed.activity, thumbnail: { status: 'pending' } }
+        const activity: ImportedActivity = {
+          ...parsed.activity, thumbnail: { status: 'pending' }, geometry: { status: 'pending' },
+        }
         const activityIndex = activities.length
         activities.push(activity)
         onProgress(snapshot(index + 1))
         await new Promise<void>((resolve) => setTimeout(resolve, 0))
-        let thumbnail: Thumbnail
-        try {
-          signal.throwIfAborted()
-          thumbnail = await cache.thumbnail(parsed.route, cacheGeneration, signal)
-        } catch (error) {
-          signal.throwIfAborted()
-          thumbnail = { status: 'error', message: error instanceof Error ? error.message : 'Route rendering failed.' }
-        }
-        activities[activityIndex] = { ...activity, thumbnail }
+        const route = parsed.route
+        await Promise.all([
+          (async () => {
+            let geometry: SimilarityGeometry
+            try {
+              geometry = await similarity.prepare(route, signal)
+            } catch (error) {
+              signal.throwIfAborted()
+              geometry = { status: 'error', message: error instanceof Error ? error.message : 'Route analysis failed.' }
+            }
+            signal.throwIfAborted()
+            activities[activityIndex] = { ...activities[activityIndex]!, geometry }
+            onProgress(snapshot(index + 1))
+          })(),
+          (async () => {
+            let thumbnail: Thumbnail
+            try {
+              signal.throwIfAborted()
+              thumbnail = await cache.thumbnail(route, cacheGeneration, signal)
+            } catch (error) {
+              signal.throwIfAborted()
+              thumbnail = { status: 'error', message: error instanceof Error ? error.message : 'Route rendering failed.' }
+            }
+            signal.throwIfAborted()
+            activities[activityIndex] = { ...activities[activityIndex]!, thumbnail }
+            onProgress(snapshot(index + 1))
+          })(),
+        ])
       }
       onProgress(snapshot(index + 1))
       // Release the event loop between files so progress and replacement imports stay interactive.

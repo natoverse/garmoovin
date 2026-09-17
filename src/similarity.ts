@@ -1,0 +1,615 @@
+import { compareActivities, type Activity } from './gpx'
+import { digest, type Coordinate, type Route } from './route'
+
+const EARTH_RADIUS = 6_371_008.8
+const VERSION = 'spherical-lines-v1:rdp5:sample10:d95:length80'
+const SIMPLIFY_METRES = 5
+const SAMPLE_METRES = 10
+
+export const SIMILARITY_LIMITS = {
+  inputPoints: 100_000,
+  inputSegments: 10_000,
+  edges: 20_000,
+  samples: 50_000,
+  lengthMetres: 500_000,
+  activities: 5_000,
+  preparationWork: 8_000_000,
+  groupingWork: 40_000_000,
+  cachedDescriptors: 64,
+  cachedDescriptorBytes: 16 * 1024 * 1024,
+  cachedPairs: 10_000,
+} as const
+
+export interface RouteDescriptor {
+  readonly version: string
+  readonly length: number
+  readonly segmentCount: number
+  readonly sampleCount: number
+}
+
+export type SimilarityGeometry =
+  | { status: 'pending' }
+  | { status: 'missing' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; key: string; descriptor: RouteDescriptor }
+
+export interface SimilarityActivity extends Activity {
+  geometry: SimilarityGeometry
+}
+
+export interface SimilarityGroup {
+  members: string[]
+  status: 'matched' | 'unmatched' | 'pending' | 'missing' | 'error'
+  message?: string
+}
+
+type Vector = readonly [number, number, number]
+type Bounds = [number, number, number, number, number, number]
+interface Edge {
+  a: Vector
+  b: Vector
+  tangent: Vector
+  angle: number
+  length: number
+  bounds: Bounds
+}
+interface Tree {
+  bounds: Bounds
+  edges?: Edge[]
+  left?: Tree
+  right?: Tree
+}
+interface PreparedRoute {
+  key: string
+  tree: Tree
+  samples: Float64Array
+  bytes: number
+}
+
+// Descriptors retain derived lines and samples, never the original GPX coordinate arrays.
+const prepared = new WeakMap<RouteDescriptor, PreparedRoute>()
+
+function abortError(): DOMException {
+  return new DOMException('Route similarity analysis was canceled.', 'AbortError')
+}
+
+class Work {
+  private chunk = 0
+  constructor(
+    private readonly signal: AbortSignal,
+    private readonly lifetime: AbortSignal,
+    private remaining: number,
+  ) {}
+
+  check(): void {
+    if (this.signal.aborted || this.lifetime.aborted) throw abortError()
+  }
+
+  tick(units = 1): boolean {
+    this.check()
+    this.remaining -= units
+    if (this.remaining < 0) {
+      throw new Error('Route similarity analysis exceeded its work limit. Try fewer or shorter routes.')
+    }
+    this.chunk += units
+    return this.chunk >= 2048
+  }
+
+  async pause(): Promise<void> {
+    this.check()
+    this.chunk = 0
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        this.signal.removeEventListener('abort', cancel)
+        this.lifetime.removeEventListener('abort', cancel)
+      }
+      const cancel = () => {
+        clearTimeout(timer)
+        cleanup()
+        reject(abortError())
+      }
+      const timer = setTimeout(() => {
+        cleanup()
+        resolve()
+      }, 0)
+      this.signal.addEventListener('abort', cancel, { once: true })
+      this.lifetime.addEventListener('abort', cancel, { once: true })
+    })
+    this.check()
+  }
+}
+
+const dot = (a: Vector, b: Vector): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+const squaredDistance = (a: Vector, b: Vector): number =>
+  (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
+const chordSquared = (metres: number): number => (2 * Math.sin(metres / EARTH_RADIUS / 2)) ** 2
+const metresFromSquaredChord = (squared: number): number =>
+  2 * EARTH_RADIUS * Math.asin(Math.min(1, Math.sqrt(Math.max(0, squared)) / 2))
+
+function vector([longitude, latitude]: Coordinate): Vector {
+  const lat = latitude * Math.PI / 180
+  const lon = longitude * Math.PI / 180
+  const cos = Math.cos(lat)
+  return [cos * Math.cos(lon), cos * Math.sin(lon), Math.sin(lat)]
+}
+
+function edge(a: Vector, b: Vector): Edge | null {
+  const cross: Vector = [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ]
+  const sine = Math.hypot(...cross)
+  const angle = Math.atan2(sine, dot(a, b))
+  if (angle < 1e-14) return null
+  if (angle >= Math.PI - 1e-7) {
+    throw new Error('Route contains an ambiguous antipodal edge and cannot be analyzed safely.')
+  }
+  const normal: Vector = [cross[0] / sine, cross[1] / sine, cross[2] / sine]
+  const tangent: Vector = [
+    normal[1] * a[2] - normal[2] * a[1],
+    normal[2] * a[0] - normal[0] * a[2],
+    normal[0] * a[1] - normal[1] * a[0],
+  ]
+  // Every minor great-circle arc is within its chord's sagitta. The padding
+  // makes these boxes conservative even at poles, the dateline, and roundoff.
+  const padding = 2 * Math.sin(angle / 4) ** 2 + 1e-14
+  return {
+    a, b, tangent, angle, length: angle * EARTH_RADIUS,
+    bounds: [
+      Math.min(a[0], b[0]) - padding, Math.max(a[0], b[0]) + padding,
+      Math.min(a[1], b[1]) - padding, Math.max(a[1], b[1]) + padding,
+      Math.min(a[2], b[2]) - padding, Math.max(a[2], b[2]) + padding,
+    ],
+  }
+}
+
+function along(point: Vector, line: Edge): number {
+  return Math.atan2(dot(point, line.tangent), dot(point, line.a))
+}
+
+function pointDistance(point: Vector, line: Edge): number {
+  const position = along(point, line)
+  if (position <= 0 || position >= line.angle) {
+    return Math.min(squaredDistance(point, line.a), squaredDistance(point, line.b))
+  }
+  const cos = Math.cos(position)
+  const sin = Math.sin(position)
+  return squaredDistance(point, [
+    line.a[0] * cos + line.tangent[0] * sin,
+    line.a[1] * cos + line.tangent[1] * sin,
+    line.a[2] * cos + line.tangent[2] * sin,
+  ])
+}
+
+async function simplify(points: Vector[], work: Work): Promise<Vector[]> {
+  const keep = new Uint8Array(points.length)
+  keep[0] = 1
+  keep[points.length - 1] = 1
+  const stack: [number, number][] = [[0, points.length - 1]]
+  const maximumError = chordSquared(SIMPLIFY_METRES)
+  while (stack.length) {
+    const [start, end] = stack.pop()!
+    if (end <= start + 1) continue
+    const line = edge(points[start]!, points[end]!)
+    let worst = maximumError
+    let split = -1
+    let previous = 0
+    for (let i = start + 1; i < end; i++) {
+      if (work.tick()) await work.pause()
+      const point = points[i]!
+      const distance = line ? pointDistance(point, line) : squaredDistance(point, points[start]!)
+      if (distance > worst) {
+        worst = distance
+        split = i
+      }
+      if (line) {
+        const position = along(point, line)
+        // RDP alone erases collinear out-and-backs and repeated laps.
+        if (position < previous - 1e-12 || position > line.angle + 1e-12) {
+          split = position < previous - 1e-12 && i > start + 1 ? i - 1 : i
+          break
+        }
+        previous = position
+      }
+    }
+    if (!line && split < 0) split = Math.floor((start + end) / 2)
+    if (split >= 0) {
+      keep[split] = 1
+      stack.push([start, split], [split, end])
+    }
+  }
+  const result: Vector[] = []
+  for (let i = 0; i < points.length; i++) {
+    if (work.tick()) await work.pause()
+    if (keep[i]) result.push(points[i]!)
+  }
+  return result
+}
+
+const emptyBounds = (): Bounds => [Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity]
+function extend(a: Bounds, b: Bounds): void {
+  for (let i = 0; i < 6; i += 2) {
+    a[i] = Math.min(a[i]!, b[i]!)
+    a[i + 1] = Math.max(a[i + 1]!, b[i + 1]!)
+  }
+}
+
+async function buildTree(lines: Edge[], work: Work, depth = 0): Promise<Tree> {
+  const bounds = emptyBounds()
+  for (const line of lines) {
+    extend(bounds, line.bounds)
+    if (work.tick()) await work.pause()
+  }
+  if (lines.length <= 8) return { bounds, edges: lines }
+  let axis = 0
+  for (let i = 2; i < 6; i += 2) {
+    if (bounds[i + 1]! - bounds[i]! > bounds[axis + 1]! - bounds[axis]!) axis = i
+  }
+  const middle = (bounds[axis]! + bounds[axis + 1]!) / 2
+  const left: Edge[] = []
+  const right: Edge[] = []
+  for (const line of lines) {
+    ((line.bounds[axis]! + line.bounds[axis + 1]!) / 2 < middle ? left : right).push(line)
+    if (work.tick()) await work.pause()
+  }
+  const balanced = !left.length || !right.length || depth >= 24
+  const half = Math.floor(lines.length / 2)
+  return {
+    bounds,
+    left: await buildTree(balanced ? lines.slice(0, half) : left, work, depth + 1),
+    right: await buildTree(balanced ? lines.slice(half) : right, work, depth + 1),
+  }
+}
+
+function pointBoundsDistance(point: Vector, bounds: Bounds): number {
+  let distance = 0
+  for (let i = 0; i < 3; i++) {
+    const gap = Math.max(bounds[i * 2]! - point[i]!, point[i]! - bounds[i * 2 + 1]!, 0)
+    distance += gap * gap
+  }
+  return distance
+}
+
+function boundsDistance(a: Bounds, b: Bounds): number {
+  let distance = 0
+  for (let i = 0; i < 6; i += 2) {
+    const gap = Math.max(a[i]! - b[i + 1]!, b[i]! - a[i + 1]!, 0)
+    distance += gap * gap
+  }
+  return distance
+}
+
+async function nearest(point: Vector, tree: Tree, work: Work): Promise<number> {
+  let best = Infinity
+  const stack: Tree[] = [tree]
+  while (stack.length) {
+    const node = stack.pop()!
+    if (work.tick()) await work.pause()
+    if (pointBoundsDistance(point, node.bounds) > best) continue
+    if (node.edges) {
+      for (const line of node.edges) {
+        if (work.tick()) await work.pause()
+        best = Math.min(best, pointDistance(point, line))
+      }
+    } else {
+      const left = node.left!
+      const right = node.right!
+      if (pointBoundsDistance(point, left.bounds) < pointBoundsDistance(point, right.bounds)) {
+        stack.push(right, left)
+      } else {
+        stack.push(left, right)
+      }
+    }
+  }
+  return best
+}
+
+async function percentile(distances: Float64Array, weights: Float64Array, work: Work): Promise<number> {
+  let total = 0
+  for (const weight of weights) {
+    total += weight
+    if (work.tick()) await work.pause()
+  }
+  let target = total * 0.95
+  let start = 0
+  let end = distances.length
+  const swap = (a: number, b: number) => {
+    const distance = distances[a]!
+    const weight = weights[a]!
+    distances[a] = distances[b]!
+    weights[a] = weights[b]!
+    distances[b] = distance
+    weights[b] = weight
+  }
+  while (end > start) {
+    const pivot = distances[Math.floor((start + end) / 2)]!
+    let low = start
+    let high = end
+    let current = start
+    let below = 0
+    let equal = 0
+    while (current < high) {
+      if (work.tick()) await work.pause()
+      if (distances[current]! < pivot) {
+        below += weights[current]!
+        swap(current++, low++)
+      } else if (distances[current]! > pivot) {
+        swap(current, --high)
+      } else {
+        equal += weights[current]!
+        current++
+      }
+    }
+    if (target <= below && low > start) {
+      end = low
+    } else if (target <= below + equal || high === end) {
+      return pivot
+    } else {
+      target -= below + equal
+      start = high
+    }
+  }
+  throw new Error('Route similarity could not calculate a weighted percentile.')
+}
+
+async function directed(source: PreparedRoute, destination: PreparedRoute, work: Work): Promise<number> {
+  const count = source.samples.length / 4
+  const distances = new Float64Array(count)
+  const weights = new Float64Array(count)
+  for (let i = 0; i < count; i++) {
+    const offset = i * 4
+    distances[i] = await nearest([
+      source.samples[offset]!, source.samples[offset + 1]!, source.samples[offset + 2]!,
+    ], destination.tree, work)
+    weights[i] = source.samples[offset + 3]!
+  }
+  return metresFromSquaredChord(await percentile(distances, weights, work))
+}
+
+function validCoordinate(point: Coordinate): boolean {
+  return Number.isFinite(point[0]) && Number.isFinite(point[1]) &&
+    Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90
+}
+
+function limit(condition: boolean, message: string): void {
+  if (condition) throw new Error(`Route similarity limit: ${message} The route was not truncated.`)
+}
+
+export class SimilaritySession {
+  private readonly lifetime = new AbortController()
+  private readonly descriptors = new Map<string, Extract<SimilarityGeometry, { status: 'ready' }>>()
+  private readonly pairs = new Map<string, number>()
+  private cachedBytes = 0
+
+  async prepare(route: Route, signal: AbortSignal): Promise<SimilarityGeometry> {
+    const work = new Work(signal, this.lifetime.signal, SIMILARITY_LIMITS.preparationWork)
+    work.check()
+    try {
+      await work.pause()
+      limit(route.length > SIMILARITY_LIMITS.inputSegments, `more than ${SIMILARITY_LIMITS.inputSegments} segments.`)
+      let count = 0
+      for (const segment of route) {
+        count += segment.length
+        limit(count > SIMILARITY_LIMITS.inputPoints, `more than ${SIMILARITY_LIMITS.inputPoints} input points.`)
+        if (work.tick()) await work.pause()
+      }
+      const canonical = new Float64Array(count * 2 + route.length)
+      const segments: Vector[][] = []
+      let offset = 0
+      for (const segment of route) {
+        canonical[offset++] = segment.length
+        let points: Vector[] = []
+        const finish = () => {
+          if (points.length > 1) segments.push(points)
+          points = []
+        }
+        for (const point of segment) {
+          if (work.tick()) await work.pause()
+          if (!validCoordinate(point)) {
+            canonical[offset++] = NaN
+            canonical[offset++] = NaN
+            finish()
+            continue
+          }
+          const longitude = Math.abs(point[1]) === 90 ? 0 : point[0] === 180 ? -180 : point[0]
+          const normalized: Coordinate = [longitude || 0, point[1] || 0]
+          canonical[offset++] = normalized[0]
+          canonical[offset++] = normalized[1]
+          const position = vector(normalized)
+          if (!points.length || squaredDistance(points.at(-1)!, position) > 1e-28) {
+            if (points.length) edge(points.at(-1)!, position)
+            points.push(position)
+          }
+        }
+        finish()
+      }
+      if (!segments.length) return { status: 'missing' }
+      const key = `${VERSION}:${await digest(canonical.buffer)}`
+      work.check()
+      const cached = this.descriptors.get(key)
+      if (cached) {
+        this.descriptors.delete(key)
+        this.descriptors.set(key, cached)
+        return cached
+      }
+      const lines: Edge[] = []
+      const paths: { lines: Edge[]; length: number; samples: number }[] = []
+      let length = 0
+      let sampleCount = 0
+      for (const segment of segments) {
+        const points = await simplify(segment, work)
+        const path: Edge[] = []
+        let pathLength = 0
+        for (let i = 1; i < points.length; i++) {
+          if (work.tick()) await work.pause()
+          const line = edge(points[i - 1]!, points[i]!)
+          if (!line) continue
+          path.push(line)
+          lines.push(line)
+          pathLength += line.length
+          limit(lines.length > SIMILARITY_LIMITS.edges, `more than ${SIMILARITY_LIMITS.edges} simplified edges.`)
+        }
+        if (!path.length) continue
+        length += pathLength
+        const samples = Math.ceil(pathLength / SAMPLE_METRES)
+        sampleCount += samples
+        limit(length > SIMILARITY_LIMITS.lengthMetres, `more than ${SIMILARITY_LIMITS.lengthMetres} recorded metres.`)
+        limit(sampleCount > SIMILARITY_LIMITS.samples, `more than ${SIMILARITY_LIMITS.samples} length samples.`)
+        paths.push({ lines: path, length: pathLength, samples })
+      }
+      if (!lines.length) return { status: 'missing' }
+      const samples = new Float64Array(sampleCount * 4)
+      offset = 0
+      for (const path of paths) {
+        const weight = path.length / path.samples
+        let lineIndex = 0
+        let start = 0
+        for (let i = 0; i < path.samples; i++) {
+          if (work.tick()) await work.pause()
+          const position = (i + 0.5) * weight
+          while (lineIndex < path.lines.length - 1 && start + path.lines[lineIndex]!.length < position) {
+            start += path.lines[lineIndex++]!.length
+            if (work.tick()) await work.pause()
+          }
+          const line = path.lines[lineIndex]!
+          const angle = (position - start) / EARTH_RADIUS
+          const cos = Math.cos(angle)
+          const sin = Math.sin(angle)
+          samples[offset++] = line.a[0] * cos + line.tangent[0] * sin
+          samples[offset++] = line.a[1] * cos + line.tangent[1] * sin
+          samples[offset++] = line.a[2] * cos + line.tangent[2] * sin
+          samples[offset++] = weight
+        }
+      }
+      const tree = await buildTree(lines, work)
+      work.check()
+      const descriptor: RouteDescriptor = Object.freeze({
+        version: VERSION, length, segmentCount: paths.length, sampleCount,
+      })
+      prepared.set(descriptor, { key, tree, samples, bytes: lines.length * 384 + samples.byteLength })
+      const geometry = { status: 'ready', key, descriptor } as const
+      this.cache(geometry)
+      return geometry
+    } catch (error) {
+      work.check()
+      if (error instanceof DOMException && error.name === 'AbortError') throw error
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Route similarity preprocessing failed.',
+      }
+    }
+  }
+
+  private cache(geometry: Extract<SimilarityGeometry, { status: 'ready' }>): void {
+    const bytes = prepared.get(geometry.descriptor)!.bytes
+    if (this.descriptors.has(geometry.key) || bytes > SIMILARITY_LIMITS.cachedDescriptorBytes) return
+    while (this.descriptors.size >= SIMILARITY_LIMITS.cachedDescriptors ||
+      this.cachedBytes + bytes > SIMILARITY_LIMITS.cachedDescriptorBytes) {
+      const oldest = this.descriptors.entries().next().value!
+      this.descriptors.delete(oldest[0])
+      this.cachedBytes -= prepared.get(oldest[1].descriptor)!.bytes
+    }
+    this.descriptors.set(geometry.key, geometry)
+    this.cachedBytes += bytes
+  }
+
+  private async qualifies(
+    a: Extract<SimilarityGeometry, { status: 'ready' }>,
+    b: Extract<SimilarityGeometry, { status: 'ready' }>,
+    tolerance: number,
+    work: Work,
+  ): Promise<boolean> {
+    if (work.tick()) await work.pause()
+    const shorter = Math.min(a.descriptor.length, b.descriptor.length)
+    const longer = Math.max(a.descriptor.length, b.descriptor.length)
+    if (shorter / longer < 0.80 - 1e-12) return false
+    const first = prepared.get(a.descriptor)
+    const second = prepared.get(b.descriptor)
+    if (!first || !second || first.key !== a.key || second.key !== b.key) {
+      throw new Error('Route similarity descriptor is unavailable. Reimport this archive.')
+    }
+    if (a.key === b.key) return true
+    if (boundsDistance(first.tree.bounds, second.tree.bounds) > chordSquared(tolerance)) return false
+    const key = a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`
+    let score = this.pairs.get(key)
+    if (score === undefined) {
+      score = Math.max(await directed(first, second, work), await directed(second, first, work))
+      work.check()
+      if (this.pairs.size >= SIMILARITY_LIMITS.cachedPairs) {
+        this.pairs.delete(this.pairs.keys().next().value!)
+      }
+    } else {
+      this.pairs.delete(key)
+    }
+    this.pairs.set(key, score)
+    return score <= tolerance + 1e-7
+  }
+
+  async group(
+    activities: readonly SimilarityActivity[],
+    tolerance: number,
+    signal: AbortSignal,
+  ): Promise<SimilarityGroup[]> {
+    const work = new Work(signal, this.lifetime.signal, SIMILARITY_LIMITS.groupingWork)
+    work.check()
+    if (!Number.isFinite(tolerance) || tolerance < 10 || tolerance > 200) {
+      throw new Error('Route similarity tolerance must be between 10 and 200 metres.')
+    }
+    limit(activities.length > SIMILARITY_LIMITS.activities, `more than ${SIMILARITY_LIMITS.activities} visible activities.`)
+    await work.pause()
+    const ordered = [...activities].sort((a, b) =>
+      compareActivities(a, b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    )
+    const groups: SimilarityGroup[] = []
+    const candidates: {
+      group: SimilarityGroup
+      geometries: Extract<SimilarityGeometry, { status: 'ready' }>[]
+    }[] = []
+    const ids = new Set<string>()
+    for (const activity of ordered) {
+      if (work.tick()) await work.pause()
+      if (ids.has(activity.id)) throw new Error('Route similarity requires unique activity identities.')
+      ids.add(activity.id)
+      const geometry = activity.geometry
+      if (geometry.status !== 'ready') {
+        groups.push({
+          members: [activity.id], status: geometry.status,
+          ...(geometry.status === 'error' ? { message: geometry.message } : {}),
+        })
+        continue
+      }
+      let assigned = false
+      for (const candidate of candidates) {
+        let matches = true
+        for (const member of candidate.geometries) {
+          if (!await this.qualifies(member, geometry, tolerance, work)) {
+            matches = false
+            break
+          }
+        }
+        if (matches) {
+          candidate.group.members.push(activity.id)
+          candidate.group.status = 'matched'
+          candidate.geometries.push(geometry)
+          assigned = true
+          break
+        }
+      }
+      if (!assigned) {
+        const group: SimilarityGroup = { members: [activity.id], status: 'unmatched' }
+        groups.push(group)
+        candidates.push({ group, geometries: [geometry] })
+      }
+    }
+    work.check()
+    return groups
+  }
+
+  dispose(): void {
+    this.lifetime.abort()
+    this.descriptors.clear()
+    this.pairs.clear()
+    this.cachedBytes = 0
+  }
+}

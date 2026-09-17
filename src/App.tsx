@@ -3,8 +3,10 @@ import { importArchive, type ImportProgress } from './archive'
 import { formatDate } from './gpx'
 import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
+import { SimilaritySession, type SimilarityGroup } from './similarity'
 import { ThumbnailCache } from './thumbnail-cache'
 import { createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload } from './title-edits'
+import { useSimilarity } from './use-similarity'
 import './App.css'
 
 type ImportState =
@@ -28,13 +30,17 @@ export default function App() {
   const [exportNotice, setExportNotice] = useState<{ error: boolean; message: string } | null>(null)
   const [cacheNotice, setCacheNotice] = useState<{ warning: boolean; message: string } | null>(null)
   const [clearingCache, setClearingCache] = useState(false)
+  const [grouping, setGrouping] = useState(false)
+  const [tolerance, setTolerance] = useState(50)
   const [cache] = useState(() => new ThumbnailCache((message) => setCacheNotice({ warning: true, message })))
   const currentImport = useRef<AbortController | null>(null)
+  const similarity = useRef<SimilaritySession | null>(null)
   const archiveFile = useRef<File | null>(null)
   const archiveFingerprint = useRef<string | null>(null)
   const downloadUrl = useRef<string | null>(null)
   useEffect(() => () => {
     currentImport.current?.abort()
+    similarity.current?.dispose()
     if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current)
   }, [])
 
@@ -49,6 +55,9 @@ export default function App() {
     if (hasUnexportedChanges && !window.confirm('You have title changes that are not in the latest JSON export. Discard these drafts and open another archive?')) return
 
     currentImport.current?.abort()
+    similarity.current?.dispose()
+    const session = new SimilaritySession()
+    similarity.current = session
     const controller = new AbortController()
     currentImport.current = controller
     archiveFile.current = file
@@ -59,15 +68,18 @@ export default function App() {
     setLastExportSignature(null)
     setExportNotice(null)
     setSearch('')
+    setGrouping(false)
+    setTolerance(50)
     setTypeSelection({ defaultSelected: true, exceptions: new Set() })
     setState({ phase: 'loading', archiveName: file.name, progress: null })
     try {
       const progress = await importArchive(file, controller.signal, (progress) => {
         if (!controller.signal.aborted) setState({ phase: 'loading', archiveName: file.name, progress })
-      }, cache)
+      }, cache, session)
       if (!controller.signal.aborted) setState({ phase: 'complete', archiveName: file.name, progress })
     } catch (error) {
       if (controller.signal.aborted) return
+      session.dispose()
       setState({
         phase: 'error',
         archiveName: file.name,
@@ -150,6 +162,26 @@ export default function App() {
   const hasUnexportedChanges = changes.length > 0 && changesSignature !== lastExportSignature
   const duplicateSourceFiles = new Set(progress?.duplicateSourceFiles ?? [])
   const hasBlockedChanges = changes.some((change) => duplicateSourceFiles.has(change.sourceFile))
+  const { groups, analyzing } = useSimilarity(similarity.current, visibleActivities, grouping, tolerance)
+  const byId = new Map(visibleActivities.map((activity) => [activity.id, activity]))
+  const groupById = new Map(groups.flatMap((group, index) => group.members.map((id) => [id, { group, index }] as const)))
+  const orderedActivities = grouping
+    ? groups.flatMap((group) => group.members.map((id) => byId.get(id)!))
+    : visibleActivities
+  const similarGroupCount = groups.filter((group) => group.members.length > 1).length
+  const ungroupedCount = groups.filter((group) => group.members.length === 1).length
+  const pendingGeometryCount = activities.filter((activity) => activity.geometry.status === 'pending').length
+
+  function groupLabel(group: SimilarityGroup, index: number, id: string) {
+    if (group.status === 'matched') {
+      const representative = byId.get(group.members[0]!)!
+      return `Suggestion ${index + 1} · ${group.members.length} activities · ${id === representative.id ? 'Representative' : `Representative: ${representative.name}`}`
+    }
+    if (group.status === 'pending') return 'Analysis pending'
+    if (group.status === 'missing') return 'No usable route · missing or degenerate geometry'
+    if (group.status === 'error') return `Analysis unavailable · ${group.message}`
+    return 'Ungrouped · no qualifying group'
+  }
 
   useEffect(() => {
     if (!hasUnexportedChanges) return
@@ -243,6 +275,23 @@ export default function App() {
         </section>
       )}
 
+      {activities.length > 0 && (
+        <section className="similarity-panel" aria-labelledby="similarity-heading">
+          <h2 id="similarity-heading">Route similarity suggestions</h2>
+          <label className="grouping-toggle">
+            <input type="checkbox" checked={grouping} onChange={(event) => setGrouping(event.currentTarget.checked)} />
+            Group similar routes
+          </label>
+          <label htmlFor="route-tolerance">Route tolerance: <span>{tolerance} m</span> — lower is stricter</label>
+          <input id="route-tolerance" type="range" min="10" max="200" step="10" value={tolerance} aria-valuetext={`${tolerance} metres`} onChange={(event) => setTolerance(Number(event.currentTarget.value))} />
+          <p>Suggestions for human review, not proof of the same route. No titles are chosen or changed. Every pair in a group must be within tolerance for 95% of both recorded routes, with a shorter/longer length ratio of at least 80%.</p>
+          <p>Routes keep their location, scale, and orientation. Travel direction and loop starting points do not matter. Small detours or nearby parallel paths can match; extra laps or large GPS spikes may not.</p>
+          <p>Groups are rebuilt after filtering. A looser tolerance can rearrange groups, not just merge them. The first member is a representative, not a canonical route or title.</p>
+          <p>Analysis stays in memory only and is released when you choose another ZIP or leave the page.</p>
+          {pendingGeometryCount > 0 && <p aria-live="polite">Preparing route geometry: {pendingGeometryCount} pending.</p>}
+        </section>
+      )}
+
       <section className="activity-section" aria-labelledby="activities-heading">
         {activities.length > 0 && (
           <div className="title-export-panel">
@@ -267,17 +316,22 @@ export default function App() {
         )}
         <div className="section-heading">
           <h2 id="activities-heading">Activities <span className="count">{visibleActivities.length}</span></h2>
-          <p>Newest first <span aria-hidden="true">/</span> Dates in UTC</p>
+          <p>{grouping ? 'Grouped by newest representative; members newest first' : 'Newest first'} <span aria-hidden="true">/</span> Dates in UTC</p>
         </div>
         <p className="results-count" aria-live="polite" aria-atomic="true">Showing {visibleActivities.length} of {activities.length} activities</p>
+        {grouping && (
+          <p className="similarity-count" aria-live="polite" aria-atomic="true">
+            {similarGroupCount} similar route {similarGroupCount === 1 ? 'group' : 'groups'} · {ungroupedCount} ungrouped {ungroupedCount === 1 ? 'activity' : 'activities'}{analyzing ? ' · Analysis pending' : ''}
+          </p>
+        )}
         {visibleActivities.length > 0 ? (
           <div className="table-container" role="region" aria-label="Scrollable activity list" tabIndex={0}>
             <table>
-              <caption className="visually-hidden">Activities with north-up route previews, newest first. Dates are in UTC.</caption>
-              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="name-heading">Name</th><th scope="col" className="title-edit-heading">New title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
+              <caption className="visually-hidden">{grouping ? 'Suggested groups ordered by their newest representative, with members newest first; not a globally chronological list.' : 'Activities with north-up route previews, newest first.'} Dates are in UTC.</caption>
+              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="name-heading">Name</th><th scope="col" className="title-edit-heading">New title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th>{grouping && <th scope="col">Route suggestion</th>}</tr></thead>
               <tbody>
-                {visibleActivities.map((activity) => (
-                  <tr key={activity.id}>
+                {orderedActivities.map((activity) => (
+                  <tr key={activity.id} data-route-group={grouping ? groupById.get(activity.id)?.group.members[0] : undefined}>
                     <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
                     <td className="activity-name" title={activity.sourceFile}>{activity.name}</td>
                     <td className="title-edit-cell">
@@ -298,6 +352,7 @@ export default function App() {
                     <td className="activity-date">{activity.date === null ? 'Unknown' : (
                       <time dateTime={new Date(activity.date).toISOString()}>{formatDate(activity.date)}</time>
                     )}</td>
+                    {grouping && <td className="similarity-status">{groupLabel(groupById.get(activity.id)!.group, groupById.get(activity.id)!.index, activity.id)}</td>}
                   </tr>
                 ))}
               </tbody>
