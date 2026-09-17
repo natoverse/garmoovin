@@ -19,6 +19,8 @@ Open the app and choose **Open GPX ZIP**. Select a Garmin GPX archive from your 
 
 Dates are labeled UTC. Missing names fall back to GPX metadata or the filename; unavailable types and dates show **Unknown**. Unreadable files are listed separately without hiding the rest of the archive. **Choose another ZIP** replaces the current import, including any errors.
 
+Use **View on Garmin Connect** below an activity's title to review its full details on Garmin's website in a new tab, keeping your local drafts open. Garmin may ask you to sign in there. Links are available in normal and grouped lists when the source filename matches `garmin-<positive integer>.gpx` (case-insensitive, including nested folders). Other filenames show **Garmin Connect link unavailable — no activity ID**; Groomin does not guess a match from the activity name.
+
 ## Filtering and search
 
 Activity-type tags appear above the list, with every type initially selected. Click tags to independently toggle types, or use **Select all** and **Select none**. Multiple selected types are combined; a type's tag stays available even when the current search has no matches for it.
@@ -135,7 +137,7 @@ Archive contents are processed in browser memory. The website has no login, acti
 
 The supplied warm cream/rust theme uses **Bagel Fat One**, **Hanken Grotesk**, and **Space Mono** from the Google Fonts CDN (`fonts.googleapis.com` and `fonts.gstatic.com`). These are public typography requests, not activity-data requests; Google receives normal connection metadata such as your IP address. The page sets a no-referrer policy, and readable local fallback fonts keep the viewer usable if the CDN is blocked or unavailable. No filenames, titles, routes, or exports are included in font requests.
 
-The GitHub Pages client holds no Garmin credentials and makes no Garmin requests. Only the explicitly invoked local writer contacts Garmin for authentication, activity reads, and title updates. Neither unit uploads GPX archives or route coordinates.
+The GitHub Pages client holds no Garmin credentials and makes no automatic Garmin requests. Activating **View on Garmin Connect** opens Garmin's website with the activity ID in the URL, without a referrer or access to the Groomin tab; no GPX contents or draft titles are sent. Garmin handles login on its own site. Only the explicitly invoked local writer uses the Garmin API for authentication, activity reads, and title updates. Neither unit uploads GPX archives or route coordinates.
 
 Only derived PNG thumbnails and their integrity/identity hashes are persisted in the browser's IndexedDB storage. Names, dates, filenames, coordinates, elevations/profiles, similarity descriptors/results, and GPX archives are not stored there. Route images can still reveal sensitive locations; clear the thumbnail cache when you no longer want them on this device.
 
