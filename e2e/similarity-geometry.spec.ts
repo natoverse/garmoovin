@@ -82,24 +82,26 @@ test('noise reduction and arc-length sampling ignore raw sampling density', asyn
   session.dispose()
 })
 
-test('longitudinal jitter is noise-reduced without losing genuine gradual out-and-backs', async () => {
-  const jittered = route(Array.from({ length: 1001 }, (_, i): XY => [
-    i === 0 || i === 1000 ? i : Math.max(0, Math.min(1000, i + (i % 2 ? 2 : -2))),
-    0,
-  ]))
-  const session = new SimilaritySession()
-  const noisy = await ready(session, jittered)
-  expect(noisy.descriptor.length).toBeCloseTo(1000, 3)
-  expect(await matches(line(), jittered, 10)).toBe(true)
-  const slowReturn = route([
-    [0, 0], [1000, 0],
-    ...Array.from({ length: 1000 }, (_, i): XY => [999 - i, 0]),
-    [1000, 0],
-  ])
-  expect((await ready(session, slowReturn)).descriptor.length).toBeCloseTo(3000, 3)
-  expect(await matches(line(), slowReturn, 200)).toBe(false)
-  session.dispose()
-})
+for (const amplitude of [2, 4, 5]) {
+  test(`longitudinal ±${amplitude} m jitter is reduced without losing genuine gradual out-and-backs`, async () => {
+    const jittered = route(Array.from({ length: 1001 }, (_, i): XY => [
+      i === 0 || i === 1000 ? i : Math.max(0, Math.min(1000, i + (i % 2 ? amplitude : -amplitude))),
+      0,
+    ]))
+    const session = new SimilaritySession()
+    const noisy = await ready(session, jittered)
+    expect(noisy.descriptor.length).toBeCloseTo(1000, 3)
+    expect(await matches(line(), jittered, 10)).toBe(true)
+    const slowReturn = route([
+      [0, 0], [1000, 0],
+      ...Array.from({ length: 1000 }, (_, i): XY => [999 - i, 0]),
+      [1000, 0],
+    ])
+    expect((await ready(session, slowReturn)).descriptor.length).toBeCloseTo(3000, 3)
+    expect(await matches(line(), slowReturn, 200)).toBe(false)
+    session.dispose()
+  })
+}
 
 test('bidirectional coverage rejects divergent loops on shared stems and one-way subsets', async () => {
   const a = route([[0, 0], [1000, 0], [1000, 400], [1400, 400], [1400, 0], [1000, 0], [0, 0]])

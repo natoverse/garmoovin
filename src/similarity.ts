@@ -2,7 +2,7 @@ import { compareActivities, type Activity } from './gpx'
 import { digest, type Coordinate, type Route } from './route'
 
 const EARTH_RADIUS = 6_371_008.8
-const VERSION = 'spherical-lines-v2:rdp5:sample10:d95:length80'
+const VERSION = 'spherical-lines-v3:rdp5:sample10:d95:length80'
 const SIMPLIFY_METRES = 5
 const SAMPLE_METRES = 10
 
@@ -190,7 +190,8 @@ async function simplify(points: Vector[], work: Work): Promise<Vector[]> {
   keep[points.length - 1] = 1
   const stack: [number, number][] = [[0, points.length - 1]]
   const maximumError = chordSquared(SIMPLIFY_METRES)
-  const reversalTolerance = SIMPLIFY_METRES / EARTH_RADIUS
+  const positionTolerance = SIMPLIFY_METRES / EARTH_RADIUS
+  const reversalTolerance = 2 * positionTolerance
   while (stack.length) {
     const [start, end] = stack.pop()!
     if (end <= start + 1) continue
@@ -209,9 +210,10 @@ async function simplify(points: Vector[], work: Work): Promise<Vector[]> {
       }
       if (line) {
         const position = along(point, line)
-        // Preserve real reversals, but not sub-5 m longitudinal GPS jitter.
+        // Absolute ±5 m noise can produce 10 m peak-to-peak backsteps;
+        // genuine reversals this small are indistinguishable from that noise.
         // Compare against maximum progress so many small steps back still count.
-        if (position < maximumPosition - reversalTolerance || position > line.angle + reversalTolerance) {
+        if (position < maximumPosition - reversalTolerance || position > line.angle + positionTolerance) {
           split = position < maximumPosition - reversalTolerance && maximumIndex > start ? maximumIndex : i
           break
         }

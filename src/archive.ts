@@ -53,14 +53,14 @@ export async function importArchive(
     const publish = (completed: number, immediate = false) => {
       latestCompleted = completed
       if (signal.aborted) return
-      if (immediate || performance.now() - lastPublished >= 16) {
+      if (immediate || performance.now() - lastPublished >= 250) {
         clearTimeout(notification)
         notification = undefined
         lastPublished = performance.now()
         onProgress(snapshot(completed))
       } else if (notification === undefined) {
-        // Coalesce rapid geometry/image updates into one display frame, not one table render per callback.
-        notification = setTimeout(() => publish(latestCompleted, true), 16)
+        // Keep progressive feedback without repeatedly laying out hundreds of rows during import.
+        notification = setTimeout(() => publish(latestCompleted, true), 250)
       }
     }
     publish(0, true)
