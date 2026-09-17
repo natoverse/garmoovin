@@ -29,6 +29,8 @@ The list reports **Showing X of Y activities**, preserving newest-first order an
 
 ## Route previews
 
+**Planned caching improvement:** Spec 009 (`specs/009-activity-cache.spec.md`, with its companion implementation plan) proposes trusted activity-ID caching for imported metadata, route images, elevation profiles, prepared similarity geometry, and pair scores. Repeat imports would skip GPX processing for cached IDs, with one manual **Clear activity cache** action after source changes. This design is not implemented yet; the current thumbnail-only behavior is described below.
+
 Thumbnails show the route on a plain background with north at the top. Each route fits its own frame, with longitude scaled for the route's latitude; matching thumbnail sizes do not imply matching distances. Separate tracks, segments, and invalid-coordinate gaps are never joined. **No route** means there are not enough connected, distinct valid points; **Thumbnail unavailable** indicates a rendering error, not a lost activity.
 
 Images are generated in the browser and reused from a local cache when reopening an archive. The cache is keyed by route geometry and rendering settings, not the activity name or filename. Renaming a file does not regenerate an unchanged route; changing its geometry does. Unreadable cache entries are regenerated, and storage failures are reported while keeping previews available for the current session.

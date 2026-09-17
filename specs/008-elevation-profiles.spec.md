@@ -62,3 +62,7 @@ Use the selected GPX file's recorded elevations only, with labeled distance (km)
 
 - CI exposed real activity-type wrapping with wider fallback fonts: the `overflow-wrap: anywhere` rule allowed the table to squeeze even "Hiking" onto two lines. Use `break-word` so intrinsic sizing preserves ordinary words, while a 180-pixel badge limit keeps unusually long unknown types bounded and wrappable.
 - Preserve the single-line assertion rather than loosening it. Exercise both default and deliberately wider fallback text across the mobile breakpoint and desktop widths, report measured badge dimensions on failure, and separately cover long unrecognized types.
+
+## Proposed caching revision (spec 009)
+
+- Spec 009 proposes persisting the prepared profile and its statistics by Garmin activity ID, with manual clearing after source changes. This would replace session-only profile persistence without changing chart measurements, appearance, or accessibility. The current release remains unchanged until implementation.
