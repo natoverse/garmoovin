@@ -25,7 +25,7 @@ test('loads nested GPX files and preserves duplicate names in newest-first order
   ])
   await selectZip(page, archive)
   await expectLoaded(page, 4)
-  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Name', 'New title', 'Type', 'Date (UTC)'])
+  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Elevation', 'Name', 'New title', 'Type', 'Date (UTC)'])
   await expectMetadataRows(page, [
     'Latest activityCycling2025-01-02 01:00:00',
     'Same nameHiking2025-01-01 00:00:00',

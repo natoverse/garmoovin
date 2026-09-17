@@ -3,6 +3,7 @@ import { importArchive, type ImportProgress } from './archive'
 import { formatDate } from './gpx'
 import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
+import ElevationPreview from './ElevationPreview'
 import { SimilaritySession, type SimilarityGroup } from './similarity'
 import { ThumbnailCache } from './thumbnail-cache'
 import { createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
@@ -211,9 +212,9 @@ export default function App() {
       <section className="import-panel" aria-labelledby="import-heading">
         <div>
           <h2 id="import-heading">Open your Garmin archive</h2>
-          <p>Select a GPX ZIP to browse routes, activity names, types, and recorded dates.</p>
+          <p>Select a GPX ZIP to browse routes, elevation profiles, activity names, types, and recorded dates.</p>
           <p className="privacy-note">Read in your browser. Nothing uploaded, no Garmin login.</p>
-          <p className="privacy-note">Only route thumbnails are cached on this device. Activity files are not saved.</p>
+          <p className="privacy-note">Only route thumbnails are cached on this device. Elevation profiles stay in memory; activity files are not saved.</p>
         </div>
         <label className="file-picker">
           <span>{state.phase === 'idle' ? 'Open GPX ZIP' : 'Choose another ZIP'}</span>
@@ -224,7 +225,7 @@ export default function App() {
       {state.phase !== 'idle' && <p className="archive-name">Archive: <strong>{state.archiveName}</strong></p>}
 
       <div className="thumbnail-controls">
-        <p>North-up route previews. Each route fits its own frame; scales differ.</p>
+        <p>North-up route previews and recorded elevation in meters over distance in kilometers. Each preview fits its own frame; scales differ.</p>
         <button type="button" className="secondary-button" disabled={clearingCache} onClick={clearCache}>
           {clearingCache ? 'Clearing cache...' : 'Clear thumbnail cache'}
         </button>
@@ -335,12 +336,13 @@ export default function App() {
         {visibleActivities.length > 0 ? (
           <div className="table-container" role="region" aria-label="Scrollable activity list" tabIndex={0}>
             <table>
-              <caption className="visually-hidden">{grouping ? 'Suggested groups ordered by their newest representative, with members newest first; not a globally chronological list.' : 'Activities with north-up route previews, newest first.'} Dates are in UTC.</caption>
-              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="name-heading">Name</th><th scope="col" className="title-edit-heading">New title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th>{grouping && <th scope="col">Route suggestion</th>}</tr></thead>
+              <caption className="visually-hidden">{grouping ? 'Suggested groups ordered by their newest representative, with members newest first; not a globally chronological list.' : 'Activities with north-up route previews, newest first.'} Elevation profiles use independent distance and elevation scales. Dates are in UTC.</caption>
+              <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="elevation-cell">Elevation</th><th scope="col" className="name-heading">Name</th><th scope="col" className="title-edit-heading">New title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th>{grouping && <th scope="col">Route suggestion</th>}</tr></thead>
               <tbody>
                 {orderedActivities.map((activity) => (
                   <tr key={activity.id} data-route-group={grouping ? groupById.get(activity.id)?.group.members[0] : undefined}>
                     <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
+                    <td className="elevation-cell"><ElevationPreview profile={activity.elevation} name={activity.name} /></td>
                     <td className="activity-name" title={activity.sourceFile}>{activity.name}</td>
                     <td className="title-edit-cell">
                       <label className="visually-hidden" htmlFor={`new-title-${activity.id}`}>New title for {activity.name} ({activity.sourceFile})</label>

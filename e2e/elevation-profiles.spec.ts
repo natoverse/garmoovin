@@ -1,0 +1,275 @@
+import { expect, test, type Page } from './test'
+import { expectLoaded, gpx, selectZip, zip } from './fixtures'
+
+declare global {
+  interface Window {
+    elevationProbe: {
+      parses: number
+      renders: number
+      holdTimers: boolean
+      timers: (() => void)[]
+      failProfile: boolean
+    }
+  }
+}
+
+const point = (lon: number, elevation: string | null, lat = '0') =>
+  `<trkpt lat="${lat}" lon="${lon}">${elevation === null ? '' : `<ele>${elevation}</ele>`}<time>2025-01-01T00:00:00Z</time></trkpt>`
+const route = (name = 'Recorded hills', elevations = ['-10', '30', '0'], type = 'hiking') =>
+  gpx(`<trk><name>${name}</name><type>${type}</type><trkseg>${elevations.map((value, i) => point(i * 0.001, value)).join('')}</trkseg></trk>`)
+const row = (page: Page, path: string) => page.locator('tbody tr').filter({ has: page.locator(`.activity-name[title="${path}"]`) })
+const profilePath = (page: Page, path: string) => row(page, path).locator('.elevation-preview path')
+
+async function installProbe(page: Page) {
+  await page.addInitScript(() => {
+    window.elevationProbe = { parses: 0, renders: 0, holdTimers: false, timers: [], failProfile: false }
+    const parse = DOMParser.prototype.parseFromString
+    DOMParser.prototype.parseFromString = function (...args) {
+      window.elevationProbe.parses++
+      return parse.apply(this, args)
+    }
+    const render = HTMLCanvasElement.prototype.toBlob
+    HTMLCanvasElement.prototype.toBlob = function (...args) {
+      window.elevationProbe.renders++
+      render.apply(this, args)
+    }
+    const format = Number.prototype.toFixed
+    Number.prototype.toFixed = function (digits) {
+      if (window.elevationProbe.failProfile && digits === 2) {
+        window.elevationProbe.failProfile = false
+        throw new Error('Synthetic elevation drawing failure.')
+      }
+      return format.call(this, digits)
+    }
+    const timer = window.setTimeout.bind(window)
+    window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+      if (window.elevationProbe.holdTimers && (!delay || delay <= 10) && typeof handler === 'function') {
+        window.elevationProbe.timers.push(() => handler(...args))
+        return 0
+      }
+      return timer(handler, delay, ...args)
+    }) as typeof window.setTimeout
+  })
+}
+
+async function releaseTimers(page: Page) {
+  await page.evaluate(() => {
+    window.elevationProbe.holdTimers = false
+    for (const callback of window.elevationProbe.timers.splice(0)) callback()
+  })
+}
+
+test('places a labeled recorded profile beside each route with separate missing and flat states', async ({ page }) => {
+  await page.goto('./')
+  await selectZip(page, await zip([
+    ['hills.gpx', route()],
+    ['flat.gpx', route('Flat below sea level', ['-5', '-5'])],
+    ['small-range.gpx', route('Small range', ['100.001', '100.002'])],
+    ['no-elevation.gpx', gpx(`<trk><name>No measurements</name><trkseg>${point(0, null)}${point(0.001, null)}</trkseg></trk>`)],
+    ['no-route.gpx', gpx('<trk><name>No route</name></trk>')],
+    ['stationary.gpx', gpx(`<trk><name>Stationary</name><trkseg>${point(0, '10')}${point(0, '20')}</trkseg></trk>`)],
+  ]))
+  await expectLoaded(page, 6)
+  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Elevation', 'Name', 'New title', 'Type', 'Date (UTC)'])
+  await expect(profilePath(page, 'hills.gpx')).toHaveAttribute('d', 'M3.00,61.00 L90.00,3.00 L177.00,46.50')
+  await expect(row(page, 'hills.gpx').getByRole('img', { name: 'Elevation profile for Recorded hills: -10 to 30 m over 0 to 0.22 km' })).toBeVisible()
+  await expect(profilePath(page, 'flat.gpx')).toHaveAttribute('d', 'M3.00,32.00 L177.00,32.00')
+  await expect(row(page, 'flat.gpx').locator('.elevation-range')).toHaveText('-5 to -5 m')
+  await expect(row(page, 'small-range.gpx').locator('.elevation-range')).toHaveText('100.001 to 100.002 m')
+  for (const file of ['no-elevation.gpx', 'no-route.gpx', 'stationary.gpx']) {
+    await expect(row(page, file).locator('.elevation-preview')).toHaveText('No elevation data')
+  }
+  await expect(row(page, 'no-elevation.gpx').getByRole('img', { name: 'Route preview for No measurements' })).toBeVisible()
+  await expect(row(page, 'no-route.gpx').locator('.route-preview')).toHaveText('No route')
+})
+
+test('parsing preserves boundaries, elevation gaps, and duplicate positions without changing route geometry', async ({ page }) => {
+  await page.goto('./')
+  const points = [
+    point(0, '0'), point(0.001, '10'), point(0.001, null), point(0.002, '20'), point(0.003, '30'),
+    point(0.004, '40', 'invalid'), point(10, '40'), point(10.001, '50'),
+  ].join('')
+  const contents = gpx(`<trk><name>Disconnected</name><trkseg>${points}</trkseg>
+    <trkseg>${point(20, '60')}${point(20.001, '70')}</trkseg></trk>
+    <trk><trkseg>${point(30, '80')}${point(30.001, '90')}</trkseg></trk>`)
+  await selectZip(page, await zip([['segments.gpx', contents]]))
+  await expectLoaded(page, 1)
+  const path = await profilePath(page, 'segments.gpx').getAttribute('d')
+  expect(path?.match(/M/g)).toHaveLength(5)
+  expect(path?.match(/L/g)).toHaveLength(5)
+  const xs = path!.split(' ').map((command) => Number(command.slice(1).split(',')[0]))
+  expect(xs).toEqual([3, 32, 61, 90, 90, 119, 119, 148, 148, 177])
+  await expect(page.locator('.elevation-distance')).toHaveText('0 to 0.67 km')
+  await expect(page.locator('.elevation-gap')).toHaveText('Partial data / gaps')
+  await expect(page.getByRole('img', { name: 'Route preview for Disconnected' })).toBeVisible()
+})
+
+test('accepts GPX namespaces and only finite decimal elevations from the trackpoint namespace', async ({ page }) => {
+  await page.goto('./')
+  const invalid = [null, '', ' ', 'bad', 'NaN', 'Infinity', '-Infinity', '0x10', '1e3', '9'.repeat(400)]
+  const files: [string, string][] = invalid.map((value, index) => [
+    `gap-${index}.gpx`,
+    gpx(`<trk><name>Gap ${index}</name><trkseg>${point(0, '0')}${point(0.001, '10')}${point(0.002, value)}${point(0.003, '20')}${point(0.004, '30')}</trkseg></trk>`),
+  ])
+  for (const [index, namespace] of ['', 'http://www.topografix.com/GPX/1/0', 'http://www.topografix.com/GPX/1/1'].entries()) {
+    files.push([`namespace-${index}.gpx`, `<gpx${namespace ? ` xmlns="${namespace}"` : ''} xmlns:ext="urn:foreign">
+      <trk><name>Namespace ${index}</name><trkseg>
+      <trkpt lat="0" lon="0"><ext:ele>9999</ext:ele><ele>+0.0</ele></trkpt>
+      <trkpt lat="0" lon="0.001"><extensions><ext:ele>9999</ext:ele></extensions><ele>-.5</ele></trkpt>
+      </trkseg></trk></gpx>`])
+  }
+  files.push(['foreign.gpx', '<gpx xmlns:ext="urn:foreign"><trk><trkseg><trkpt lat="0" lon="0"><ext:ele>1</ext:ele></trkpt><trkpt lat="0" lon="1"><ext:ele>2</ext:ele></trkpt></trkseg></trk></gpx>'])
+  await selectZip(page, await zip(files))
+  await expectLoaded(page, files.length)
+  for (let index = 0; index < invalid.length; index++) {
+    const path = await profilePath(page, `gap-${index}.gpx`).getAttribute('d')
+    expect(path?.match(/M/g)).toHaveLength(2)
+    expect(path?.match(/L/g)).toHaveLength(2)
+    await expect(row(page, `gap-${index}.gpx`).locator('.elevation-gap')).toBeVisible()
+  }
+  for (let index = 0; index < 3; index++) {
+    await expect(row(page, `namespace-${index}.gpx`).locator('.elevation-range')).toHaveText('-0.5 to 0 m')
+  }
+  await expect(row(page, 'foreign.gpx').locator('.elevation-preview')).toHaveText('No elevation data')
+})
+
+test('profiles follow duplicate-name activities through drafts, filters, grouping, and unchanged JSON exports', async ({ page }) => {
+  await installProbe(page)
+  await page.goto('./')
+  await selectZip(page, await zip([
+    ['garmin-1.gpx', route('Same name')],
+    ['garmin-2.gpx', route('Same name', ['10', '10', '10'], 'running')],
+    ['garmin-3.gpx', route('Other name', ['100', '0', '100'])],
+  ]))
+  await expectLoaded(page, 3)
+  const first = await profilePath(page, 'garmin-1.gpx').getAttribute('d')
+  const second = await profilePath(page, 'garmin-2.gpx').getAttribute('d')
+  expect(first).not.toBe(second)
+  const drafts = page.getByRole('textbox', { name: 'New title for Same name (garmin-1.gpx)', exact: true })
+  await drafts.fill('Keep this proposal')
+  await page.getByRole('checkbox', { name: 'Group similar routes' }).check()
+  await expect(page.locator('.similarity-count')).toContainText('1 similar route group')
+  await expect(page.locator('.similarity-count')).not.toContainText('Analysis pending')
+  await page.getByRole('searchbox').fill('same')
+  await page.getByRole('button', { name: 'Hiking', exact: true }).click()
+  await expect(page.locator('tbody tr')).toHaveCount(1)
+  await expect(profilePath(page, 'garmin-2.gpx')).toHaveAttribute('d', second!)
+  const downloading = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save JSON (1)' }).click()
+  const stream = await (await downloading).createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
+  const mapping = JSON.parse(Buffer.concat(chunks).toString())
+  expect(mapping.schemaVersion).toBe(2)
+  expect(mapping.changes).toEqual([{
+    sourceFile: 'garmin-1.gpx', garminActivityId: '1', recordedStartTime: '2025-01-01T00:00:00.000Z',
+    activityType: 'Hiking', originalTitle: 'Same name', newTitle: 'Keep this proposal',
+  }])
+  await page.getByRole('button', { name: 'Select all', exact: true }).click()
+  await page.getByRole('searchbox').fill('')
+  await page.getByRole('checkbox', { name: 'Group similar routes' }).uncheck()
+  await expect(profilePath(page, 'garmin-1.gpx')).toHaveAttribute('d', first!)
+  await expect(profilePath(page, 'garmin-2.gpx')).toHaveAttribute('d', second!)
+  await expect(drafts).toHaveValue('Keep this proposal')
+  expect(await page.evaluate(() => window.elevationProbe.parses)).toBe(3)
+})
+
+test('route cache hits, clearing, and rendering/storage failures cannot stale or remove elevation profiles', async ({ page }) => {
+  await installProbe(page)
+  await page.goto('./')
+  await selectZip(page, await zip([['route.gpx', route()]]))
+  await expectLoaded(page, 1)
+  expect(await page.evaluate(() => window.elevationProbe.renders)).toBe(1)
+  await page.reload()
+  await expect(page.locator('tbody tr')).toHaveCount(0)
+  const requests: string[] = []
+  page.on('request', (request) => { if (/^https?:/.test(request.url())) requests.push(request.url()) })
+  const changed = await zip([['route.gpx', route('Changed elevation', ['100', '0', '100'])]])
+  await selectZip(page, changed)
+  await expectLoaded(page, 1)
+  expect(await page.evaluate(() => window.elevationProbe.renders)).toBe(0)
+  await expect(page.locator('.elevation-range')).toHaveText('0 to 100 m')
+  const path = await profilePath(page, 'route.gpx').getAttribute('d')
+  await page.getByRole('button', { name: 'Clear thumbnail cache' }).click()
+  await expect(page.locator('.cache-notice')).toContainText('Thumbnail cache cleared')
+  await expect(profilePath(page, 'route.gpx')).toHaveAttribute('d', path!)
+  await page.evaluate(() => {
+    indexedDB.open = () => { throw new Error('Synthetic storage failure.') }
+    HTMLCanvasElement.prototype.toBlob = (callback) => callback(null)
+  })
+  await selectZip(page, changed)
+  await expectLoaded(page, 1)
+  await expect(page.locator('.route-preview')).toHaveText('Thumbnail unavailable')
+  await expect(page.locator('.cache-warning')).toContainText('Synthetic storage failure')
+  await expect(profilePath(page, 'route.gpx')).toHaveAttribute('d', path!)
+  expect(requests).toEqual([])
+  expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0)
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name))).toEqual(['groomin-thumbnails'])
+})
+
+test('pending large imports remain usable and replacement prevents stale profiles', async ({ page }) => {
+  await installProbe(page)
+  await page.goto('./')
+  const large = await zip(Array.from({ length: 300 }, (_, index) => [`${index}.gpx`, route(`Old ${index}`)]))
+  await page.evaluate(() => { window.elevationProbe.holdTimers = true })
+  await selectZip(page, large)
+  await expect(page.locator('tbody tr')).toHaveCount(1)
+  await expect(page.getByLabel('Preparing elevation... for Old 0', { exact: true })).toBeVisible()
+  const draft = page.getByRole('textbox', { name: 'New title for Old 0 (0.gpx)', exact: true })
+  await draft.fill('Unsaved draft')
+  await page.getByRole('searchbox').fill('old')
+  const replacement = await zip([['fresh.gpx', route('Fresh', ['0', '0'])]])
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await selectZip(page, replacement)
+  await expect(draft).toHaveValue('Unsaved draft')
+  page.once('dialog', (dialog) => dialog.accept())
+  await selectZip(page, replacement)
+  await releaseTimers(page)
+  await expectLoaded(page, 1)
+  await expect(page.locator('.activity-name')).toHaveText('Fresh')
+  await expect(page.getByRole('img', { name: /^Elevation profile for Fresh:/ })).toBeVisible()
+  await expect(page.getByRole('img', { name: /^Elevation profile for Old/ })).toHaveCount(0)
+  await expect(page.getByRole('textbox')).toBeEmpty()
+})
+
+test('profile processing failures are visible without losing metadata, maps, or other profiles', async ({ page }) => {
+  await installProbe(page)
+  await page.goto('./')
+  await page.evaluate(() => { window.elevationProbe.failProfile = true })
+  await selectZip(page, await zip([
+    ['broken.gpx', route('Broken profile')], ['missing.gpx', gpx()], ['healthy.gpx', route('Healthy')],
+  ]))
+  await expectLoaded(page, 3)
+  await expect(row(page, 'broken.gpx').locator('.elevation-error')).toHaveText('Elevation unavailable')
+  await expect(page.getByLabel('Elevation unavailable for Broken profile: Synthetic elevation drawing failure.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Route preview for Broken profile' })).toBeVisible()
+  await expect(row(page, 'broken.gpx').getByRole('textbox')).toBeEnabled()
+  await expect(row(page, 'missing.gpx').locator('.elevation-preview')).toHaveText('No elevation data')
+  await expect(page.getByRole('img', { name: /^Elevation profile for Healthy:/ })).toBeVisible()
+  await selectZip(page, await zip([['valid.gpx', route('Recovered')]]))
+  await expectLoaded(page, 1)
+  await expect(page.getByRole('img', { name: /^Elevation profile for Recovered:/ })).toBeVisible()
+})
+
+for (const width of [320, 768, 1440]) {
+  test(`profiles and labels remain reachable in the scrollable table at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('./')
+    await selectZip(page, await zip([['route.gpx', route()]]))
+    await expectLoaded(page, 1)
+    const preview = page.getByRole('img', { name: /^Elevation profile for/ })
+    await preview.scrollIntoViewIfNeeded()
+    await expect(preview).toBeInViewport()
+    expect(await preview.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    for (const label of ['.elevation-range', '.elevation-distance']) {
+      expect(await preview.locator(label).evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    expect(await page.locator('.type-label').evaluate((element) => {
+      const style = getComputedStyle(element)
+      return element.clientHeight <= Math.ceil(parseFloat(style.lineHeight) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom))
+    })).toBe(true)
+    await page.getByRole('region', { name: 'Scrollable activity list' }).focus()
+    await expect(page.getByRole('region', { name: 'Scrollable activity list' })).toBeFocused()
+  })
+}
