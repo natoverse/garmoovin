@@ -83,7 +83,7 @@ test('places a labeled recorded profile beside each route with separate missing 
   await expectLoaded(page, 6)
   await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Elevation', 'Title', 'Type', 'Date (UTC)'])
   await expect(profilePath(page, 'hills.gpx')).toHaveAttribute('d', 'M3.00,61.00 L90.00,3.00 L177.00,46.50')
-  await expect(profilePath(page, 'hills.gpx')).toHaveCSS('stroke', 'rgb(210, 105, 44)')
+  await expect(profilePath(page, 'hills.gpx')).toHaveCSS('stroke', 'rgb(94, 122, 112)')
   await expect(row(page, 'hills.gpx').getByRole('img', { name: 'Elevation profile for Recorded hills: -10 to 30 m over 0 to 0.22 km' })).toBeVisible()
   await expect(profilePath(page, 'flat.gpx')).toHaveAttribute('d', 'M3.00,32.00 L177.00,32.00')
   await expect(row(page, 'flat.gpx').locator('.elevation-range')).toHaveText('-5 to -5 m')

@@ -56,6 +56,7 @@ Use the selected GPX file's recorded elevations only, with labeled distance (km)
 
 - Use the existing `--color-rust-500` token (`#D2692C`) for the elevation line as a distinct accent. Route thumbnails keep their darker rust-600 stroke; no route-cache version change is needed.
 - Keep statistics in the activity details area below the unified inline title editor described in spec 004. Chart dimensions, measurements, accessibility, and persistence remain unchanged.
+- Subsequent color refinement: use `--color-sage-600` (`#5E7A70`) for the elevation line, superseding rust-500. Keep route thumbnails rust-600 and preserve all other chart behavior.
 
 ## Cross-platform layout correction (2026-09-17)
 
