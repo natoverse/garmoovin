@@ -14,6 +14,7 @@ export default defineConfig({
         '**/.git/**',
         '**/*.[zZ][iI][pP]',
         '**/*.[gG][pP][xX]',
+        '**/garmin-title-mappings*.json',
         '**/local-data/**',
       ],
     },
