@@ -1,3 +1,5 @@
+import type { Coordinate, Route } from './route'
+
 export interface Activity {
   id: string
   sourceFile: string
@@ -35,7 +37,19 @@ function timestamp(value: string): number | null {
   return Number.isFinite(date) ? date : null
 }
 
-export function parseGpx(xml: string, sourceFile: string, id: string): Activity {
+function coordinate(point: Element): Coordinate | null {
+  const latitude = point.getAttribute('lat')?.trim() ?? ''
+  const longitude = point.getAttribute('lon')?.trim() ?? ''
+  const decimal = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/
+  if (!decimal.test(latitude) || !decimal.test(longitude)) return null
+  const lat = Number(latitude)
+  const lon = Number(longitude)
+  return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180
+    ? [lon, lat]
+    : null
+}
+
+export function parseGpx(xml: string, sourceFile: string, id: string): { activity: Activity; route: Route } {
   const document = new DOMParser().parseFromString(xml, 'application/xml')
   if (document.getElementsByTagName('parsererror').length > 0) {
     throw new Error('Malformed XML. Export this activity again as GPX.')
@@ -64,20 +78,37 @@ export function parseGpx(xml: string, sourceFile: string, id: string): Activity 
     : 'Unknown'
 
   let earliest: number | null = null
+  const route: Route = []
   for (const track of tracks) {
     for (const segment of children(track, 'trkseg')) {
+      let coordinates: Coordinate[] = []
+      const finishSegment = () => {
+        if (coordinates.length > 1) route.push(coordinates)
+        coordinates = []
+      }
       for (const point of children(segment, 'trkpt')) {
         const date = timestamp(text(point, 'time'))
         if (date !== null && (earliest === null || date < earliest)) earliest = date
+        const position = coordinate(point)
+        if (!position) {
+          finishSegment()
+        } else {
+          const previous = coordinates.at(-1)
+          if (!previous || previous[0] !== position[0] || previous[1] !== position[1]) coordinates.push(position)
+        }
       }
+      finishSegment()
     }
   }
   return {
-    id,
-    sourceFile,
-    name,
-    type,
-    date: earliest ?? timestamp(text(metadata, 'time') || text(root, 'time')),
+    activity: {
+      id,
+      sourceFile,
+      name,
+      type,
+      date: earliest ?? timestamp(text(metadata, 'time') || text(root, 'time')),
+    },
+    route,
   }
 }
 

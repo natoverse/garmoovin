@@ -1,28 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { TextReader, Uint8ArrayWriter, ZipWriter } from '@zip.js/zip.js'
-
-const namespace = 'http://www.topografix.com/GPX/1/1'
-const gpx = (body = '') => `<?xml version="1.0"?><gpx version="1.1" xmlns="${namespace}">${body}</gpx>`
-const point = (date: string) => `<trkpt lat="0" lon="0"><time>${date}</time></trkpt>`
-const track = (name: string, type: string, date: string) =>
-  `<trk><name>${name}</name><type>${type}</type><trkseg>${point(date)}</trkseg></trk>`
-
-async function zip(files: [string, string][], options: { level?: number; password?: string } = {}) {
-  const writer = new ZipWriter(new Uint8ArrayWriter(), { useWebWorkers: false })
-  for (const [name, contents] of files) {
-    await writer.add(name, new TextReader(contents), options)
-  }
-  return Buffer.from(await writer.close())
-}
-
-async function selectZip(page: Page, buffer: Buffer, name = 'synthetic.zip') {
-  await page.getByLabel('Open GPX ZIP').setInputFiles({ name, mimeType: 'application/zip', buffer })
-}
-
-async function expectLoaded(page: Page, count: number, skipped = 0) {
-  await expect(page.getByRole('status')).toContainText(`Import complete. ${count} ${count === 1 ? 'activity' : 'activities'} loaded. ${skipped} skipped.`)
-  await expect(page.locator('tbody tr')).toHaveCount(count)
-}
+import { expect, test } from '@playwright/test'
+import { expectLoaded, expectMetadataRows, gpx, point, selectZip, track, zip } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
@@ -47,8 +24,8 @@ test('loads nested GPX files and preserves duplicate names in newest-first order
   ])
   await selectZip(page, archive)
   await expectLoaded(page, 4)
-  await expect(page.getByRole('columnheader')).toHaveText(['Name', 'Type', 'Date (UTC)'])
-  await expect(page.locator('tbody tr')).toHaveText([
+  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Name', 'Type', 'Date (UTC)'])
+  await expectMetadataRows(page, [
     'Latest activityCycling2025-01-02 01:00:00',
     'Same nameHiking2025-01-01 00:00:00',
     'Same nameTrail Running2025-01-01 00:00:00',
@@ -66,7 +43,7 @@ test('uses name fallbacks and retains unrecognized activity types', async ({ pag
     ['f.gpx', '<gpx><trk><name>No namespace</name><type>hiking</type></trk></gpx>'],
   ]))
   await expectLoaded(page, 6)
-  await expect(page.locator('tbody tr')).toHaveText([
+  await expectMetadataRows(page, [
     'Legacy nameUnknown2000-01-01 00:00:00',
     'Track name999Unknown',
     'Metadata onlyFuture SportUnknown',
@@ -87,7 +64,7 @@ test('uses the earliest valid trackpoint across tracks and segments, not export 
     ['d.gpx', gpx('<metadata><time>2024-13-01T00:00:00Z</time></metadata><trk><name>Bad metadata</name></trk>')],
   ]))
   await expectLoaded(page, 4)
-  await expect(page.locator('tbody tr')).toHaveText([
+  await expectMetadataRows(page, [
     'Earliest pointUnknown2024-05-31 23:30:00',
     'Metadata fallbackUnknown2024-02-29 12:00:00',
     'No timezoneUnknownUnknown',
@@ -101,7 +78,7 @@ test('ignores foreign extension names and times', async ({ page }) => {
     <trk xmlns:x="urn:synthetic"><x:name>Not the activity name</x:name><x:type>Not the activity type</x:type>
     <trkseg><trkpt lat="0" lon="0"><x:time>2030-01-01T00:00:00Z</x:time></trkpt></trkseg></trk>`)] ]))
   await expectLoaded(page, 1)
-  await expect(page.locator('tbody tr')).toHaveText(['Actual nameUnknown2024-01-01 00:00:00'])
+  await expectMetadataRows(page, ['Actual nameUnknown2024-01-01 00:00:00'])
 })
 
 test('reports malformed and non-GPX documents without losing readable activities', async ({ page }) => {
@@ -159,14 +136,14 @@ test('replacing an in-progress archive cancels its updates and clears issues', a
   await expect(page.getByRole('status')).toContainText('Reading GPX files:')
   await selectZip(page, await zip([['new.gpx', gpx(track('Replacement', 'walking', '2025-01-01T00:00:00Z'))]]), 'new.zip')
   await expectLoaded(page, 1)
-  await expect(page.locator('tbody tr')).toHaveText(['ReplacementWalking2025-01-01 00:00:00'])
+  await expectMetadataRows(page, ['ReplacementWalking2025-01-01 00:00:00'])
   await expect(page.locator('.notice')).toHaveCount(0)
   await expect(page.locator('.archive-name')).toHaveText('Archive: new.zip')
   await page.waitForTimeout(800)
   await expectLoaded(page, 1)
 })
 
-test('imports hundreds of activities without network requests or browser persistence', async ({ page }) => {
+test('imports hundreds of metadata-only activities without network requests or persistence', async ({ page }) => {
   const requests: string[] = []
   page.on('request', (request) => requests.push(request.url()))
   await selectZip(page, await zip(Array.from({ length: 467 }, (_, i) => [
