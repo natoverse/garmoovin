@@ -12,16 +12,16 @@ This is the first step toward the route-first gallery described in `MANIFESTO.md
 
 ## Acceptance Criteria
 
-- [ ] The user can select a local ZIP and view every readable GPX activity within it, including GPX files in nested folders. Non-GPX entries are ignored.
-- [ ] The table has labeled Name, Type, and Date columns and displays the loaded activity count.
-- [ ] Name uses the GPX track name, then the metadata name, then the filename when neither is available.
-- [ ] Type uses the exported activity type, with readable formatting. Missing types display "Unknown"; unrecognized values remain visible rather than being guessed.
-- [ ] Date uses the earliest valid trackpoint timestamp, falling back to the GPX metadata timestamp. Dates are displayed in UTC with that convention labeled; missing or invalid dates display "Unknown". ZIP and filesystem timestamps are never used as activity dates.
-- [ ] Activities sort newest first, with unknown dates last and filename as a stable tie-breaker. Activities with identical names remain separate rows.
-- [ ] Before selection, the app explains how to open an archive. Loading is visibly indicated; an empty archive and an unreadable ZIP produce distinct, actionable messages.
-- [ ] A malformed GPX does not prevent other activities from loading. Skipped files are identified with reasons and a count; missing name, type, or date alone does not discard an activity.
-- [ ] Selecting a replacement archive clears the prior results and errors. Opening an archive requires no Garmin login and sends no file contents or activity metadata to a server.
-- [ ] The source ZIP remains unchanged and ignored by Git. Neither it nor extracted activities or generated activity data enters commits or deployment artifacts; committed test fixtures are synthetic.
+- [x] The user can select a local ZIP and view every readable GPX activity within it, including GPX files in nested folders. Non-GPX entries are ignored.
+- [x] The table has labeled Name, Type, and Date columns and displays the loaded activity count.
+- [x] Name uses the GPX track name, then the metadata name, then the filename when neither is available.
+- [x] Type uses the exported activity type, with readable formatting. Missing types display "Unknown"; unrecognized values remain visible rather than being guessed.
+- [x] Date uses the earliest valid trackpoint timestamp, falling back to the GPX metadata timestamp. Dates are displayed in UTC with that convention labeled; missing or invalid dates display "Unknown". ZIP and filesystem timestamps are never used as activity dates.
+- [x] Activities sort newest first, with unknown dates last and filename as a stable tie-breaker. Activities with identical names remain separate rows.
+- [x] Before selection, the app explains how to open an archive. Loading is visibly indicated; an empty archive and an unreadable ZIP produce distinct, actionable messages.
+- [x] A malformed GPX does not prevent other activities from loading. Skipped files are identified with reasons and a count; missing name, type, or date alone does not discard an activity.
+- [x] Selecting a replacement archive clears the prior results and errors. Opening an archive requires no Garmin login and sends no file contents or activity metadata to a server.
+- [x] The source ZIP remains unchanged and ignored by Git. Neither it nor extracted activities or generated activity data enters commits or deployment artifacts; committed test fixtures are synthetic.
 
 ## Scope
 
@@ -41,4 +41,8 @@ This is the first step toward the route-first gallery described in `MANIFESTO.md
 - Use `../stronger` as a reference for relevant app conventions, not as a requirement to copy its architecture.
 - The supplied local archive contains GPX exports; sampled files have one track with a name, textual type, metadata timestamp, and trackpoint timestamps. These fields must still be treated as optional.
 - "All activities" means all readable GPX activities in the selected archive, not the complete Garmin account history.
-- This spec defines behavior only; implementation and technology selection follow separately.
+- Implementation uses TypeScript, React, and Vite, following Stronger's frontend conventions without Firebase or deployment configuration.
+- ZIP entries are read sequentially with `@zip.js/zip.js`, including checksum validation per GPX file. Browser XML parsing supports GPX 1.0, GPX 1.1, and unnamespaced exports; foreign extension fields do not override activity metadata.
+- Only timestamps with an explicit timezone and valid calendar fields are accepted. GPX 1.0 root-level name/time fields serve as the legacy metadata fallback.
+- Imports progressively populate the list. Replacing an archive cancels the previous import and prevents stale results from appearing.
+- Generated activity data belongs in the ignored `local-data/` directory. The app does not persist imports or copy archives into build assets.

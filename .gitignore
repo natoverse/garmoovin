@@ -1,1 +1,13 @@
 /garmin-gpx-export.zip
+*.[zZ][iI][pP]
+*.[gG][pP][xX]
+/local-data/
+/node_modules/
+/dist/
+/test-results/
+/playwright-report/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
