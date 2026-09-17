@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: './',
+  base: '/garmin-view/',
   publicDir: false,
   server: {
     fs: {
@@ -16,6 +16,11 @@ export default defineConfig({
         '**/*.[gG][pP][xX]',
         '**/garmin-title-mappings*.json',
         '**/local-data/**',
+        '**/.venv/**',
+        '**/garmin_writer/**',
+        '**/garmin_tokens.json',
+        '**/oauth1_token.json',
+        '**/oauth2_token.json',
       ],
     },
   },

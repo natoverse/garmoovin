@@ -1,6 +1,15 @@
 # Garmin View
 
-A personal Garmin activity cleanup companion to Stronger. Browse and filter activities with locally cached route previews, review suggested repeat routes, draft new titles, and export the proposed renames. Garmin write-back is specified but not implemented.
+A personal Garmin activity cleanup companion to Stronger, with two independent units:
+
+- A static GitHub Pages website for browsing local archives, suggesting repeat routes, drafting titles, and downloading a self-contained JSON edit configuration.
+- A local Python CLI using `garminconnect` to verify, review, and explicitly apply that JSON. It never needs the original ZIP.
+
+## GitHub Pages
+
+The website's project path is `/garmin-view/`, with its Pages address at `https://natoverse.github.io/garmin-view/` after deployment. In the repository's **Settings → Pages**, select **GitHub Actions** as the source before the first deployment. The **Deploy Pages** workflow runs the browser suite, builds, and publishes only Vite's `dist` artifact when changes reach `main`; it can also be dispatched on `main`. The feature branch itself does not deploy.
+
+There is no website backend, localhost bridge, Garmin login, or Apply to Garmin button. Hosting serves code only. The Python CLI, credentials, journals, archives, and downloads are not deployment artifacts. A Pages website can be publicly accessible even when its source repository is private; private activity files must never be added to the published assets.
 
 ## Using the viewer
 
@@ -28,11 +37,61 @@ Images are generated in the browser and reused from a local cache when reopening
 
 Enter a **New title** beside an activity's original name. Drafts remain attached to their individual activities while filtering, searching, or loading thumbnails. Search continues to use the original name. Empty, whitespace-only, and unchanged titles create no proposal; leading/trailing whitespace is removed from exported titles without changing what you typed.
 
-**Save JSON** shows the total proposal count and downloads `garmin-title-mappings.json`, including changes for hidden rows. Each export is a complete current snapshot, not an incremental patch. It contains `schemaVersion: 1`, the selected ZIP's SHA-256 `archiveFingerprint`, and `changes` with each activity's full `sourceFile` path, `originalTitle`, and `newTitle`. Duplicate GPX paths cannot identify activities uniquely: clear affected proposals before exporting any changes, or choose an archive with unique paths.
+**Save JSON** shows the total proposal count and downloads `garmin-title-mappings.json`, including changes for hidden rows. Each export is a complete current snapshot, not an incremental patch. Schema version **2** includes the ZIP fingerprint and the identity evidence needed by the separate writer; the exact contract is below. Missing evidence, duplicate GPX paths (including unreadable duplicates), or multiple proposals for one target ID block download with visible per-source reasons, even for hidden rows. Clear affected proposals before saving; no partial file is silently exported. Browsing and drafting still work for activities that cannot be exported.
 
 Export becomes available when import finishes. The ZIP fingerprint is computed on the first export and reused for that selected file. You can keep editing while JSON is prepared; those later edits are not silently included in an already requested snapshot. The browser handles the download location and filename, and the app cannot verify that you completed saving it to disk. No GPX files or Garmin activities are changed.
 
 Drafts remain after export, but are not restored after leaving the page. Replacing an archive asks before discarding proposals that differ from the latest export; browser navigation warns where supported. Save before leaving rather than relying on navigation warnings, especially on mobile. Browser downloads are separate files: clearing a draft does not rewrite an earlier export.
+
+### JSON handoff: schema version 2
+
+The top-level object has exactly `schemaVersion: 2`, `archiveFingerprint` (64 lowercase SHA-256 hexadecimal characters), and a nonempty `changes` array. Every change has all of these fields, with **no null values**:
+
+| Field | Value |
+| --- | --- |
+| `sourceFile` | Full, unique ZIP entry path; no backslashes, empty path segments, `.` or `..` segments |
+| `garminActivityId` | Positive decimal ID as a **string**, without leading zeros, matching the case-insensitive `garmin-<id>.gpx` basename |
+| `recordedStartTime` | Recorded start time in UTC as `YYYY-MM-DDTHH:mm:ss.sssZ`, year 0001–9999 |
+| `activityType` | Known GPX activity type as displayed, not blank or `Unknown` |
+| `originalTitle` | Original imported activity name |
+| `newTitle` | Trimmed, nonempty proposed name, different from the original |
+
+The date is the earliest valid trackpoint timestamp, falling back to GPX metadata/root time as in the viewer. The ID is **candidate evidence, not a verified remote identity**. The archive hash records provenance; it is not a signature, authorization, or a claim that the writer checked the ZIP. The writer independently verifies every target against Garmin.
+
+Both units enforce a 1 MiB UTF-8 JSON limit. The writer rejects unknown or duplicate JSON fields, invalid or missing identity, repeated source paths/target IDs, and unsupported schema versions before connecting. Version 1 exports lack the required evidence and must be re-exported; the CLI never fills gaps by guessing or requesting the ZIP. `fixtures/title-mapping-v2.json` is a synthetic contract fixture shared by browser and CLI tests.
+
+## Local Garmin CLI
+
+Use Python 3.13 on macOS or Linux from this checkout. These commands install and run the **writer only**; no web server is needed:
+
+```sh
+python3.13 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m garmin_writer login
+.venv/bin/python -m garmin_writer review ~/Downloads/garmin-title-mappings.json
+.venv/bin/python -m garmin_writer apply ~/Downloads/garmin-title-mappings.json
+```
+
+`login` prompts in the terminal for your email, password, and MFA code when required. It saves a private reusable session and changes no activities. `review` loads that session and performs only reads. `apply` performs a fresh review, prints the account and every original/current/proposed title, source identity, blocking reason, and eligible count, then requires typing **APPLY** in an interactive terminal. There is no unattended `--yes` option. Changing the file after review cannot change that invocation's immutable batch.
+
+`GARMINTOKENS` is a CLI-only **token-directory path**, not token JSON or a permanent bearer token. It defaults to `~/.garmin-view/tokens`. The library restores and refreshes saved sessions; expired authentication requires `login` again, never an automatic write retry. `GARMIN_VIEW_JOURNAL_DIR` defaults to `~/.garmin-view/journal`. Use separate dedicated directories outside this repository, owned by you, with no symlinked ancestry. Directories use mode 0700 and token/journal files use 0600. Process locks prevent overlapping writers or logins sharing these token/journal directories.
+
+For each proposal, the exact ID must appear in the authenticated account's activity listing and match the returned details, known type, and start time within **60 seconds**. The listing uses the UTC source day plus/minus one day to cover Garmin's local-date filtering; it never chooses a nearest match. Type checks ignore case and space/hyphen/underscore formatting, not meaning. The review's `changedSinceExport` flag highlights remote names that differ from the imported title.
+
+Immediately before each write, the CLI rechecks the account, identity, and current title. A changed title becomes a conflict requiring a fresh review; an already-matching title is skipped. It changes only the activity name. The journal is atomically saved and flushed before a batch and before each mutation; successful read-back is required for **confirmed**. Results distinguish confirmed, already applied, blocked, conflict, failed, not attempted, and uncertain outcomes. A timeout or interrupted response is not proof of success or failure.
+
+Authentication failure, rate limiting, or uncertainty pauses remaining writes. Recovery is a separate read-only action:
+
+```sh
+.venv/bin/python -m garmin_writer reconcile
+.venv/bin/python -m garmin_writer reconcile --apply
+```
+
+`reconcile` reads the previous journal and Garmin without writing or requiring the original JSON/ZIP. `reconcile --apply` repeats reconciliation and offers a new interactive confirmation for remaining eligible proposals. Already-applied items are not replayed. Unreadable or unsafe journals block the writer; restore them rather than deleting them to bypass recovery. Keep the same journal directory when recovering.
+
+Exit codes: **0** for a fully eligible read-only review or fully confirmed/already-applied result; **1** for blocked/partial results or declined authorization; **2** for input, authentication, storage, or unexpected errors; **130** for interruption. A successful read-only review is not a successful write. CLI results do not synchronize back into the browser, rewrite the input JSON, or alter original titles/GPX files. Reusing an old export rechecks remote state rather than blindly repeating it.
+
+The selected adapter is pinned to `garminconnect==0.3.13`. Tests mock authentication/MFA, remote reads and writes, identity mismatches, conflicts, interruptions, journal failures, and recovery. No real Garmin login or rename was performed during implementation; live compatibility still requires user-run authentication and review.
 
 ## Route similarity suggestions
 
@@ -50,16 +109,18 @@ Derived geometry and bounded pair-score reuse live only in memory for the select
 
 ## Privacy
 
-Archive contents are processed in browser memory. There is no login, upload, analytics, external font, or map service. Reloading the page clears the imported activity list, and the source archive remains unchanged.
+Archive contents are processed in browser memory. The website has no login, upload, analytics, external font, or map service. Reloading the page clears the imported activity list, and the source archive remains unchanged.
 
-The planned GitHub Pages deployment remains a static, browser-only viewer: it will not hold Garmin credentials or contact Garmin. Garmin write-back belongs to a separate local writer that consumes a self-contained exported JSON file, verifies remote identity, and requires review and confirmation before changing a title.
+The GitHub Pages client holds no Garmin credentials and makes no Garmin requests. Only the explicitly invoked local writer contacts Garmin for authentication, activity reads, and title updates. Neither unit uploads GPX archives or route coordinates.
 
 Only derived PNG thumbnails and their integrity/identity hashes are persisted in the browser's IndexedDB storage. Names, dates, filenames, coordinates, similarity descriptors/results, and GPX archives are not stored there. Route images can still reveal sensitive locations; clear the thumbnail cache when you no longer want them on this device.
 
-ZIP and GPX files, `garmin-title-mappings*.json` exports (including browser-numbered copies), `local-data/`, build output, and browser-test artifacts are Git-ignored. Keep renamed exports and any other locally generated activity data in `local-data/`. Private exports are also blocked from being served by the localhost app. The build has no public-data directory and includes only the app entry point and its imported assets; private archives must never be imported into application source.
+ZIP and GPX files, `garmin-title-mappings*.json` exports (including browser-numbered copies), `local-data/`, build output, and browser-test artifacts are Git-ignored. Keep renamed exports and any other locally generated activity data in `local-data/`. Neither downloads nor `local-data/` belong in the deployed artifact. The build has no public-data directory and includes only the app entry point and its imported assets; private archives must never be imported into application source.
+
+Downloaded JSON and CLI journals contain private activity IDs, dates, paths, and titles. Treat them as sensitive even though they contain no credentials or coordinates. Garmin tokens remain in the private token directory, never frontend assets, browser storage, mapping exports, or application logs. Terminal review output contains activity information; avoid sharing it or enabling verbose third-party HTTP logging. Clearing browser storage does not delete downloaded JSON or CLI journals.
 
 ## Project
 
-The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright. The **Check** GitHub Actions workflow builds, type-checks, and runs that coverage; it does not currently deploy the app.
+The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright at the actual `/garmin-view/` base path. The **Check** workflow builds/type-checks the website and runs browser and Python unittest coverage. The separate **Deploy Pages** workflow publishes only `dist` from `main`, never Python code, credentials, journals, test data, or source archives.
 
-Spec 007 defines deployment of Vite's uncommitted `dist` output to the `/garmin-view/` GitHub Pages project path, production-path coverage, and the next self-contained JSON handoff. See `MANIFESTO.md` for the product direction and specs 001-004 and 006 for the implemented scope.
+See `MANIFESTO.md` for the product direction and specs 001–007 for the implemented scope. Spec 005 owns the standalone writer; spec 007 owns the static deployment and schema-v2 boundary.

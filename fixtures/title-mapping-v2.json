@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "archiveFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "changes": [
+    {
+      "sourceFile": "nested/garmin-1.gpx",
+      "garminActivityId": "1",
+      "recordedStartTime": "2025-01-01T10:00:00.000Z",
+      "activityType": "Hiking",
+      "originalTitle": "Original 1",
+      "newTitle": "Renamed 1"
+    },
+    {
+      "sourceFile": "garmin-2.gpx",
+      "garminActivityId": "2",
+      "recordedStartTime": "2025-01-01T10:00:00.000Z",
+      "activityType": "Hiking",
+      "originalTitle": "Original 2",
+      "newTitle": "Renamed 2"
+    }
+  ]
+}

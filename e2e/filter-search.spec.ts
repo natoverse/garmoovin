@@ -32,7 +32,7 @@ const tags = (page: Page) => page.getByRole('group', { name: 'Activity types' })
 const typeTag = (page: Page, type: string) => tags(page).filter({ hasText: new RegExp(`^${type}$`) })
 
 async function setup(page: Page, files = sampleFiles) {
-  await page.goto('/')
+  await page.goto('./')
   await selectZip(page, await zip(files))
   await expectLoaded(page, files.length)
 }
@@ -188,7 +188,7 @@ test('filtering reuses loaded metadata and images, even after their disk cache i
 for (const selectNewTypes of [false, true]) {
   test(`progressive imports keep newly discovered types ${selectNewTypes ? 'selected' : 'deselected'} after an all/none choice`, async ({ page }) => {
     await installProbe(page, true)
-    await page.goto('/')
+    await page.goto('./')
     await selectZip(page, await zip([
       ['first.gpx', activity('First route', 'hiking')],
       ['second.gpx', activity('Second route', 'cycling')],

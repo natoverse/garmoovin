@@ -22,10 +22,10 @@ function route(name: string, offset = 0, type = 'hiking', day = 1) {
 }
 
 const files: [string, string][] = [
-  ['a.gpx', route('Green A', 0, 'hiking', 4)],
-  ['b.gpx', route('Green B', 40, 'running', 3)],
-  ['c.gpx', route('Green C', 80, 'hiking', 2)],
-  ['d.gpx', route('Far away', 1000, 'cycling', 1)],
+  ['garmin-1.gpx', route('Green A', 0, 'hiking', 4)],
+  ['garmin-2.gpx', route('Green B', 40, 'running', 3)],
+  ['garmin-3.gpx', route('Green C', 80, 'hiking', 2)],
+  ['garmin-4.gpx', route('Far away', 1000, 'cycling', 1)],
   ['empty.gpx', gpx('<trk><name>No geometry</name></trk>')],
 ]
 const grouping = (page: Page) => page.getByRole('checkbox', { name: 'Group similar routes' })
@@ -33,7 +33,7 @@ const tolerance = (page: Page) => page.getByRole('slider', { name: /Route tolera
 const search = (page: Page) => page.getByRole('searchbox')
 
 async function setup(page: Page, entries = files) {
-  await page.goto('/')
+  await page.goto('./')
   await selectZip(page, await zip(entries))
   await expectLoaded(page, entries.length)
 }
@@ -159,8 +159,8 @@ test('filters before grouping, replaces hidden representatives, and keeps archiv
 test('grouped ordering uses representatives, source-path ties and unknown dates; filtering chooses a new representative', async ({ page }) => {
   await setup(page, [
     ['z.gpx', route('Repeat oldest', 0, 'running', 1)],
-    ['tie/b.gpx', route('Tie B', 1000, 'hiking', 3)],
-    ['tie/a.gpx', route('Tie A', 0, 'cycling', 3)],
+    ['tie/garmin-2.gpx', route('Tie B', 1000, 'hiking', 3)],
+    ['tie/garmin-1.gpx', route('Tie A', 0, 'cycling', 3)],
     ['unknown.gpx', route('Unknown date', 1000, 'running', 0)],
     ['middle.gpx', route('Middle', 2000, 'hiking', 2)],
   ])
@@ -175,9 +175,9 @@ test('grouped ordering uses representatives, source-path ties and unknown dates;
 test('drafts survive regrouping under original-title search and hidden drafts export exactly once', async ({ page }) => {
   await setup(page)
   await search(page).fill('green')
-  const aTitle = page.getByRole('textbox', { name: 'New title for Green A (a.gpx)', exact: true })
+  const aTitle = page.getByRole('textbox', { name: 'New title for Green A (garmin-1.gpx)', exact: true })
   await aTitle.fill('First proposed name')
-  await page.getByRole('textbox', { name: 'New title for Green C (c.gpx)', exact: true }).fill('Hidden proposed name')
+  await page.getByRole('textbox', { name: 'New title for Green C (garmin-3.gpx)', exact: true }).fill('Hidden proposed name')
   await grouping(page).check()
   await expectGroups(page, [['Green A', 'Green B'], ['Green C']])
   await setTolerance(page, 100)
@@ -192,8 +192,8 @@ test('drafts survive regrouping under original-title search and hidden drafts ex
   const chunks: Buffer[] = []
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk))
   expect(JSON.parse(Buffer.concat(chunks).toString()).changes).toEqual([
-    { sourceFile: 'a.gpx', originalTitle: 'Green A', newTitle: 'First proposed name' },
-    { sourceFile: 'c.gpx', originalTitle: 'Green C', newTitle: 'Hidden proposed name' },
+    { sourceFile: 'garmin-1.gpx', originalTitle: 'Green A', newTitle: 'First proposed name', garminActivityId: '1', recordedStartTime: '2025-01-04T00:00:00.000Z', activityType: 'Hiking' },
+    { sourceFile: 'garmin-3.gpx', originalTitle: 'Green C', newTitle: 'Hidden proposed name', garminActivityId: '3', recordedStartTime: '2025-01-02T00:00:00.000Z', activityType: 'Hiking' },
   ])
   await search(page).fill('')
   await grouping(page).uncheck()
@@ -266,7 +266,7 @@ test('superseded group calculations cannot publish stale memberships after slide
 
 test('several-hundred-route import stays replaceable with unfinished analysis and preserves draft safeguards', async ({ page }) => {
   await installProbe(page)
-  await page.goto('/')
+  await page.goto('./')
   const archive = await zip(Array.from({ length: 360 }, (_, index) => [
     `${index}.gpx`, route(`Route ${index}`, index * 20),
   ]))
@@ -297,7 +297,7 @@ test('several-hundred-route import stays replaceable with unfinished analysis an
 
 test('analysis failures retain activities and usable previews with an explanation', async ({ page }) => {
   await installProbe(page)
-  await page.goto('/')
+  await page.goto('./')
   await page.evaluate(() => { window.similarityProbe.failDigest = true })
   await selectZip(page, await zip([['error.gpx', route('Analysis failure')], ['missing.gpx', gpx()]]))
   await expectLoaded(page, 2)
@@ -310,7 +310,7 @@ test('analysis failures retain activities and usable previews with an explanatio
 })
 
 test('over-limit routes remain visible without silently truncating their geometry', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('./')
   await selectZip(page, await zip([
     ['long.gpx', gpx('<trk><name>Beyond analysis limit</name><trkseg><trkpt lon="0" lat="0"/><trkpt lon="5" lat="0"/></trkseg></trk>')],
     ['normal.gpx', route('Usable short route')],
