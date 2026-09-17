@@ -51,3 +51,7 @@ Generate thumbnails once and reuse a local cache rather than redrawing them when
 ## Rebranding decisions (2026-09-17)
 
 - The app is now Groomin and uses `groomin-thumbnails`. Cache clearing also removes the legacy app database, preventing old sensitive route previews from being left behind by the rename.
+
+## Supplied design decisions (2026-09-17)
+
+- Match the supplied theme with rust `#B84A1C` route strokes on cream `#F5E7C8`. Increment the renderer version to 2 so dark/cyan previews are not reused for the new theme. Projection, dimensions, geometry handling, and privacy behavior remain unchanged.

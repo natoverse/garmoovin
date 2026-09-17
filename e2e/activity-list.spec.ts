@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test'
 import { expectLoaded, expectMetadataRows, gpx, point, selectZip, track, zip } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
@@ -6,7 +6,8 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('explains local import and renders an accessible empty state', async ({ page }) => {
-  await expect(page.getByRole('heading', { name: 'Groomin.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Good routes. Better names.' })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Groomin logo' })).toBeVisible()
   await expect(page.getByText('Your activities will appear here')).toBeVisible()
   await expect(page.getByText('Read in your browser. Nothing uploaded, no Garmin login.')).toBeVisible()
   await page.keyboard.press('Tab')
@@ -24,7 +25,7 @@ test('loads nested GPX files and preserves duplicate names in newest-first order
   ])
   await selectZip(page, archive)
   await expectLoaded(page, 4)
-  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Name', 'New title', 'Type', 'Date (UTC)'])
+  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Elevation', 'Name', 'New title', 'Type', 'Date (UTC)'])
   await expectMetadataRows(page, [
     'Latest activityCycling2025-01-02 01:00:00',
     'Same nameHiking2025-01-01 00:00:00',

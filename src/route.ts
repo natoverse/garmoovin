@@ -2,7 +2,7 @@ export type Coordinate = readonly [longitude: number, latitude: number]
 export type Route = Coordinate[][]
 
 export const THUMBNAIL_SETTINGS = {
-  version: 1,
+  version: 2,
   projection: 'local-equirectangular',
   width: 240,
   height: 160,
@@ -10,8 +10,8 @@ export const THUMBNAIL_SETTINGS = {
   lineWidth: 3,
   lineCap: 'round',
   lineJoin: 'round',
-  stroke: '#00e5ff',
-  background: '#10171e',
+  stroke: '#B84A1C',
+  background: '#F5E7C8',
 } as const
 
 export async function digest(data: ArrayBuffer): Promise<string> {

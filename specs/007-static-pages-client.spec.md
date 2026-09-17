@@ -52,3 +52,10 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 
 - Superseding the original deployment test gate, `Deploy Pages` runs `npm ci` and `npm run build` before uploading `dist`, without installing Playwright browsers or running `npm test`. The build remains explicit because the browser suite previously invoked it through its web server configuration.
 - Browser coverage remains in the `Check` workflow for pull requests and pushes; deployment does not repeat those tests.
+
+## Supplied design decisions (2026-09-17)
+
+- Restyle the existing viewer using the supplied cream/brown/rust/amber/olive tokens, rounded panels, offset shadows, and readable focus/error/disabled states. Keep imports, filtering, grouping, drafts, export, and the standalone writer unchanged.
+- Display the supplied logo at the top of the app and README. Commit only the extracted public theme and optimized logo; keep the design ZIP ignored and do not ship its example HTML or support script.
+- Load Bagel Fat One, Hanken Grotesk, and Space Mono using the supplied Google Fonts CDN link with `display=swap` and local fallbacks. This explicitly permits public typography requests to Google's font domains, not activity uploads, analytics, or Garmin access. Document connection metadata and suppress referrers.
+- Preserve the `/groomin/` build path, accessible keyboard controls, contained mobile tables, and reduced-motion preferences. Browser tests stub the font service to verify fallback behavior without relying on external availability.
