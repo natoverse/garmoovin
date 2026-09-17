@@ -10,8 +10,16 @@ type ImportState =
   | { phase: 'loading' | 'complete'; archiveName: string; progress: ImportProgress | null }
   | { phase: 'error'; archiveName: string; message: string }
 
+interface TypeSelection {
+  // Newly discovered types follow the most recent Select all/none choice.
+  defaultSelected: boolean
+  exceptions: Set<string>
+}
+
 export default function App() {
   const [state, setState] = useState<ImportState>({ phase: 'idle' })
+  const [search, setSearch] = useState('')
+  const [typeSelection, setTypeSelection] = useState<TypeSelection>({ defaultSelected: true, exceptions: new Set() })
   const [cacheNotice, setCacheNotice] = useState<{ warning: boolean; message: string } | null>(null)
   const [clearingCache, setClearingCache] = useState(false)
   const [cache] = useState(() => new ThumbnailCache((message) => setCacheNotice({ warning: true, message })))
@@ -26,6 +34,8 @@ export default function App() {
     currentImport.current?.abort()
     const controller = new AbortController()
     currentImport.current = controller
+    setSearch('')
+    setTypeSelection({ defaultSelected: true, exceptions: new Set() })
     setState({ phase: 'loading', archiveName: file.name, progress: null })
     try {
       const progress = await importArchive(file, controller.signal, (progress) => {
@@ -42,6 +52,15 @@ export default function App() {
     }
   }
 
+  function toggleType(type: string) {
+    setTypeSelection((selection) => {
+      const exceptions = new Set(selection.exceptions)
+      if (exceptions.has(type)) exceptions.delete(type)
+      else exceptions.add(type)
+      return { ...selection, exceptions }
+    })
+  }
+
   async function clearCache() {
     setClearingCache(true)
     try {
@@ -56,6 +75,13 @@ export default function App() {
 
   const progress = state.phase === 'loading' || state.phase === 'complete' ? state.progress : null
   const activities = progress?.activities ?? []
+  const activityTypes = Array.from(new Set(activities.map((activity) => activity.type))).sort()
+  const isTypeSelected = (type: string) => typeSelection.defaultSelected !== typeSelection.exceptions.has(type)
+  const selectedTypeCount = activityTypes.filter(isTypeSelected).length
+  const query = search.trim().toLowerCase()
+  const visibleActivities = activities.filter(
+    (activity) => isTypeSelected(activity.type) && activity.name.toLowerCase().includes(query),
+  )
   const issues = progress?.issues ?? []
   const loading = state.phase === 'loading'
 
@@ -115,18 +141,45 @@ export default function App() {
         </section>
       )}
 
+      {activities.length > 0 && (
+        <section className="filters-panel" aria-labelledby="filters-heading">
+          <div className="filter-heading">
+            <h2 id="filters-heading">Filter activities</h2>
+            <div className="filter-actions">
+              <button type="button" className="secondary-button" onClick={() => setTypeSelection({ defaultSelected: true, exceptions: new Set() })}>Select all</button>
+              <button type="button" className="secondary-button" onClick={() => setTypeSelection({ defaultSelected: false, exceptions: new Set() })}>Select none</button>
+            </div>
+          </div>
+          <fieldset className="type-filters">
+            <legend>Activity types</legend>
+            <div className="type-tags">
+              {activityTypes.map((type) => (
+                <button key={type} type="button" className="type-tag" aria-pressed={isTypeSelected(type)} onClick={() => toggleType(type)}>
+                  <span className="tag-marker" aria-hidden="true" />{type}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <div className="search-field" role="search">
+            <label htmlFor="activity-search">Search activity names</label>
+            <input id="activity-search" type="search" placeholder="Try green or mount..." value={search} onChange={(event) => setSearch(event.currentTarget.value)} autoComplete="off" />
+          </div>
+        </section>
+      )}
+
       <section className="activity-section" aria-labelledby="activities-heading">
         <div className="section-heading">
-          <h2 id="activities-heading">Activities <span className="count">{activities.length}</span></h2>
+          <h2 id="activities-heading">Activities <span className="count">{visibleActivities.length}</span></h2>
           <p>Newest first <span aria-hidden="true">/</span> Dates in UTC</p>
         </div>
-        {activities.length > 0 ? (
+        <p className="results-count" aria-live="polite" aria-atomic="true">Showing {visibleActivities.length} of {activities.length} activities</p>
+        {visibleActivities.length > 0 ? (
           <div className="table-container" role="region" aria-label="Scrollable activity list" tabIndex={0}>
             <table>
               <caption className="visually-hidden">Activities with north-up route previews, newest first. Dates are in UTC.</caption>
               <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="name-heading">Name</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
               <tbody>
-                {activities.map((activity) => (
+                {visibleActivities.map((activity) => (
                   <tr key={activity.id}>
                     <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
                     <td className="activity-name" title={activity.sourceFile}>{activity.name}</td>
@@ -138,6 +191,13 @@ export default function App() {
                 ))}
               </tbody>
             </table>
+          </div>
+        ) : activities.length > 0 ? (
+          <div className="empty-state">
+            <h3>{selectedTypeCount === 0 ? 'No activity types selected' : 'No activities match your search'}</h3>
+            <p>{selectedTypeCount === 0
+              ? 'Select one or more activity types, or use Select all, to show activities.'
+              : 'Try a shorter name, clear the search, or select more activity types.'}</p>
           </div>
         ) : (
           <div className="empty-state">
