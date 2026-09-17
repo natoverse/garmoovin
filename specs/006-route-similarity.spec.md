@@ -63,3 +63,8 @@ Investigation of a privately supplied example confirmed the expected matches wit
 ## Activity-ID caching revision (spec 009)
 
 - Spec 009 persists prepared similarity geometry by Garmin activity ID and numerical pair scores by unordered ID pair, with manual clearing after source changes. Snapshot/restore retains the existing spatial tree and weighted samples rather than reconstructing them. This replaces session-only persistence while retaining matching, memory/work limits, filtered regrouping, and bundle presentation. Final groups remain transient. Anonymous/duplicate-ID routes keep session-only geometry reuse.
+
+## Imperial display iteration (2026-09-17)
+
+- Display route tolerance in feet, including the slider label and accessible value: 32.81–656.17 ft, initially 164.04 ft. Keep the underlying 10–200 meter range, 10-meter step, and 50-meter default so this presentation change cannot alter route bundles.
+- Use feet in tolerance validation messages and miles in the recorded-distance resource-limit message. Geometry, pair scores, cache formats, matching thresholds, cancellation, and keyboard behavior remain unchanged.

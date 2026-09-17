@@ -99,8 +99,3 @@ export async function prepareElevation(tracks: ElevationTracks, signal: AbortSig
   signal.throwIfAborted()
   return { status: 'ready', path: commands.join(' '), distance, minElevation, maxElevation, partial }
 }
-
-export function formatProfileValue(value: number): string {
-  if (value !== 0 && (Math.abs(value) < 0.01 || Math.abs(value) >= 1_000_000)) return value.toExponential(2)
-  return Number(value.toFixed(2)).toString()
-}

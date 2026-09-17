@@ -1,5 +1,6 @@
 import { expect, test } from './test'
-import { ELEVATION_FRAME, formatProfileValue, prepareElevation, type ElevationPoint, type ElevationTracks } from '../src/elevation'
+import { ELEVATION_FRAME, prepareElevation, type ElevationPoint, type ElevationTracks } from '../src/elevation'
+import { formatFeet, formatMiles } from '../src/units'
 
 const degrees = 180 / Math.PI / 6_371_008.8
 const point = (distance: number, elevation: number | null): ElevationPoint => ({
@@ -99,13 +100,29 @@ test('distance handles dateline crossings, high latitudes, and equivalent statio
   }
 })
 
-test('finite extreme elevations render safely and labels do not turn tiny distances into zero', async () => {
+test('finite extreme elevations render safely and imperial labels do not turn tiny distances into zero', async () => {
   const result = await ready([[point(0, -1e308), point(1, 1e308)]])
   expect(coordinates(result.path)).toEqual([[3, 61], [177, 3]])
-  expect(formatProfileValue(0.000001)).toBe('1.00e-6')
-  expect(formatProfileValue(-1e308)).toBe('-1.00e+308')
-  expect(formatProfileValue(0)).toBe('0')
+  expect(formatMiles(0.001609344)).toBe('1.00e-6')
+  expect(formatFeet(-1e308)).toBe('-3.28e+308')
+  expect(formatFeet(1e308)).toBe('3.28e+308')
+  expect(formatFeet(0)).toBe('0')
   await expect(prepareElevation([[point(0, 0), point(100, Infinity)]], signal())).rejects.toThrow('supported elevation profile range')
+})
+
+test('display conversions use international feet and miles without losing small elevation ranges', () => {
+  expect(formatFeet(0.3048)).toBe('1')
+  expect(formatFeet(1609.344)).toBe('5280')
+  expect(formatFeet(-0.3048)).toBe('-1')
+  expect(formatFeet(0.0000003048)).toBe('1.00e-6')
+  expect(formatMiles(1609.344)).toBe('1')
+  expect(formatMiles(1609344)).toBe('1000')
+  expect(formatMiles(0)).toBe('0')
+  expect(formatFeet(100.001)).toBe('328.09')
+  expect(formatFeet(100.002)).toBe('328.09')
+  expect(formatFeet(100.001, true)).toBe('328.08727034120733')
+  expect(formatFeet(100.002, true)).toBe('328.09055118110234')
+  expect(formatFeet(1e308, true)).not.toBe(formatFeet(1.00001e308, true))
 })
 
 test('large profiles yield during preparation and honor cancellation without mutating their input', async () => {

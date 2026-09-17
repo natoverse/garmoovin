@@ -66,3 +66,10 @@ Use the selected GPX file's recorded elevations only, with labeled distance (km)
 ## Activity-ID caching revision (spec 009)
 
 - Spec 009 persists the prepared profile and its statistics with the Garmin-ID activity record. Warm hits bypass profile preparation; manual cache clearing followed by reopening reads changed elevations. This supersedes session-only persistence and source-freshness behavior without changing chart measurements, appearance, accessibility, or the JSON export.
+
+## Imperial display iteration (2026-09-17)
+
+- Supersede the earlier metric presentation: show recorded elevation ranges in feet (`ft`) and cumulative horizontal distance in miles (`mi`), including statistics and accessible descriptions in ordinary and grouped lists.
+- Convert only when formatting labels, using exactly 0.3048 meters per foot and 1609.344 meters per mile. Keep GPX parsing, profile geometry, cached numeric measurements, and exports unchanged; existing cache entries display the new units without a migration or clearing.
+- Retain compact two-decimal formatting, scientific notation for tiny/large values, distinct nonflat range endpoints, and safe labels for finite extreme elevations. Preserve zero/negative elevations, flat profiles, gaps, and unavailable states.
+- Update the viewer explanation and regression coverage for converted labels, grouped/cached activities, and narrow layouts. This is a fixed display-unit change, not a unit-preference feature.
