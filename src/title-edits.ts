@@ -4,23 +4,58 @@ export const TITLE_EXPORT_FILENAME = 'garmin-title-mappings.json'
 
 export interface TitleChange {
   sourceFile: string
+  garminActivityId: string | null
+  recordedStartTime: string | null
+  activityType: string
   originalTitle: string
   newTitle: string
 }
 
 export interface TitleMappingExport {
-  schemaVersion: 1
+  schemaVersion: 2
   archiveFingerprint: string
-  changes: TitleChange[]
+  changes: (TitleChange & { garminActivityId: string; recordedStartTime: string })[]
+}
+
+export function candidateActivityId(sourceFile: string): string | null {
+  if (sourceFile.includes('\\') || sourceFile.split('/').some((part) => ['', '.', '..'].includes(part))) return null
+  return /^garmin-([1-9]\d*)\.gpx$/i.exec(sourceFile.split('/').at(-1) ?? '')?.[1] ?? null
 }
 
 export function pendingTitleChanges(activities: readonly Activity[], drafts: ReadonlyMap<string, string>): TitleChange[] {
   return activities.flatMap((activity) => {
     const newTitle = drafts.get(activity.id)?.trim()
     return newTitle && newTitle !== activity.name
-      ? [{ sourceFile: activity.sourceFile, originalTitle: activity.name, newTitle }]
+      ? [{
+        sourceFile: activity.sourceFile, originalTitle: activity.name, newTitle,
+        garminActivityId: candidateActivityId(activity.sourceFile),
+        recordedStartTime: activity.date === null ? null : new Date(activity.date).toISOString(),
+        activityType: activity.type,
+      }]
       : []
   })
+}
+
+export function titleExportErrors(changes: readonly TitleChange[], duplicateSourceFiles: ReadonlySet<string>): Map<string, string> {
+  const paths = new Set<string>()
+  const ids = new Map<string, number>()
+  for (const change of changes) {
+    if (change.garminActivityId) ids.set(change.garminActivityId, (ids.get(change.garminActivityId) ?? 0) + 1)
+  }
+  const errors = new Map<string, string>()
+  for (const change of changes) {
+    let reason: string | null = null
+    if (duplicateSourceFiles.has(change.sourceFile) || paths.has(change.sourceFile)) reason = 'Duplicate GPX paths cannot identify a source uniquely.'
+    else if (!change.garminActivityId || candidateActivityId(change.sourceFile) !== change.garminActivityId) reason = 'A garmin-<positive integer>.gpx filename is required as Garmin activity ID evidence.'
+    else if ((ids.get(change.garminActivityId) ?? 0) > 1) reason = 'Multiple proposals target the same Garmin activity ID.'
+    else if (!change.recordedStartTime || !/^(?!0000)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(change.recordedStartTime)
+      || !Number.isFinite(Date.parse(change.recordedStartTime)) || new Date(change.recordedStartTime).toISOString() !== change.recordedStartTime) reason = 'A valid recorded start time is required.'
+    else if (!change.activityType.trim() || change.activityType.trim().toLowerCase() === 'unknown') reason = 'A known activity type is required.'
+    else if (!change.newTitle.trim() || change.newTitle !== change.newTitle.trim() || change.newTitle === change.originalTitle) reason = 'A trimmed, changed, nonempty proposed title is required.'
+    if (reason) errors.set(change.sourceFile, reason)
+    paths.add(change.sourceFile)
+  }
+  return errors
 }
 
 export function createTitleMappingExport(
@@ -30,14 +65,17 @@ export function createTitleMappingExport(
 ): TitleMappingExport {
   if (!/^[a-f0-9]{64}$/.test(archiveFingerprint)) throw new Error('The source archive fingerprint is invalid.')
   if (changes.length === 0) throw new Error('There are no proposed title changes to export.')
-  const seen = new Set<string>()
-  for (const change of changes) {
-    if (duplicateSourceFiles.has(change.sourceFile) || seen.has(change.sourceFile)) {
-      throw new Error(`Cannot identify "${change.sourceFile}" uniquely. Clear its proposed rename or use an archive with unique GPX paths.`)
-    }
-    seen.add(change.sourceFile)
+  const errors = titleExportErrors(changes, duplicateSourceFiles)
+  if (errors.size) throw new Error(Array.from(errors, ([path, reason]) => `${path}: ${reason}`).join(' '))
+  const verified = changes.map((change) => {
+    if (change.garminActivityId === null || change.recordedStartTime === null) throw new Error('Required source identity is missing.')
+    return { ...change, garminActivityId: change.garminActivityId, recordedStartTime: change.recordedStartTime }
+  })
+  const mapping: TitleMappingExport = { schemaVersion: 2, archiveFingerprint, changes: verified }
+  if (new TextEncoder().encode(`${JSON.stringify(mapping, null, 2)}\n`).byteLength > 1024 * 1024) {
+    throw new Error('The mapping exceeds the 1 MiB limit. Export fewer proposals.')
   }
-  return { schemaVersion: 1, archiveFingerprint, changes }
+  return mapping
 }
 
 export function requestTitleMappingDownload(mapping: TitleMappingExport): string {

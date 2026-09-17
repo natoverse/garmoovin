@@ -59,7 +59,7 @@ async function setup(page: Page, options = { delay: 0, failures: 0 }) {
       revoke(url)
     }
   }, options)
-  await page.goto('/')
+  await page.goto('./')
 }
 
 async function cachedKeys(page: Page) {

@@ -12,3 +12,10 @@ garmin-title-mappings*.json
 .env.*
 !.env.example
 .DS_Store
+/.venv/
+__pycache__/
+*.pyc
+garmin_tokens.json
+oauth1_token.json
+oauth2_token.json
+/garmin-journal/

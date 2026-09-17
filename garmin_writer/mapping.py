@@ -1,0 +1,86 @@
+import json
+import re
+from pathlib import Path
+from typing import Literal
+
+from pydantic import Field, field_validator, model_validator
+
+from .models import Model, Proposal, ReviewRequest, utc_time
+from .writer import candidate
+
+
+class MappingError(ValueError):
+    pass
+
+
+class MappingChange(Model):
+    sourceFile: str
+    garminActivityId: str = Field(pattern=r"^[1-9][0-9]*$")
+    recordedStartTime: str
+    activityType: str
+    originalTitle: str
+    newTitle: str
+
+    @field_validator("recordedStartTime")
+    @classmethod
+    def recorded_time(cls, value: str) -> str:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", value):
+            raise ValueError("A UTC ISO timestamp with milliseconds is required.")
+        utc_time(value)
+        return value
+
+    @model_validator(mode="after")
+    def identity(self):
+        if candidate(self.sourceFile) != self.garminActivityId:
+            raise ValueError("The candidate activity ID must match the source filename.")
+        if not self.activityType.strip() or self.activityType.strip().casefold() == "unknown":
+            raise ValueError("A known activity type is required.")
+        if not self.newTitle.strip() or self.newTitle != self.newTitle.strip() or self.newTitle == self.originalTitle:
+            raise ValueError("A trimmed, changed, nonempty title is required.")
+        return self
+
+
+class Mapping(Model):
+    schemaVersion: Literal[2]
+    archiveFingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    changes: list[MappingChange] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def distinct_targets(self):
+        for name in ("sourceFile", "garminActivityId"):
+            if len({getattr(change, name) for change in self.changes}) != len(self.changes):
+                raise ValueError("Duplicate source paths or target activity IDs are not supported.")
+        return self
+
+    def proposals(self) -> ReviewRequest:
+        return ReviewRequest(archiveFingerprint=self.archiveFingerprint, changes=[
+            Proposal(sourceId=change.sourceFile, sourceFile=change.sourceFile,
+                     originalTitle=change.originalTitle, newTitle=change.newTitle,
+                     date=change.recordedStartTime, activityType=change.activityType)
+            for change in self.changes
+        ])
+
+
+def unique_fields(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise MappingError("Duplicate JSON fields are not supported.")
+        result[key] = value
+    return result
+
+
+def load_mapping(path: Path) -> Mapping:
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(1024 * 1024 + 1)
+        if len(raw) > 1024 * 1024:
+            raise MappingError("The mapping exceeds the 1 MiB limit. Export fewer proposals.")
+        data = json.loads(raw, object_pairs_hook=unique_fields)
+        if not isinstance(data, dict) or type(data.get("schemaVersion")) is not int or data["schemaVersion"] != 2:
+            raise MappingError("Only schemaVersion 2 is supported. Re-export from the website; version 1 lacks identity evidence.")
+        return Mapping.model_validate(data)
+    except OSError as error:
+        raise MappingError("The JSON mapping could not be read. Check the supplied file and permissions.") from error
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise MappingError("The mapping must be valid UTF-8 JSON.") from error

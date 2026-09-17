@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { expectLoaded, expectMetadataRows, gpx, point, selectZip, track, zip } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
+  await page.goto('./')
 })
 
 test('explains local import and renders an accessible empty state', async ({ page }) => {

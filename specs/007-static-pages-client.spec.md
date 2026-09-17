@@ -11,12 +11,12 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 ## Acceptance Criteria
 
 - [ ] GitHub Actions builds and deploys the Vite `dist` artifact to GitHub Pages, and the app and its assets load from the `/garmin-view/` project path; generated `dist` files are not committed.
-- [ ] Production-path coverage loads `/garmin-view/` and verifies ZIP import, route thumbnails, title editing, and JSON download using synthetic activity data.
-- [ ] Import, parsing, thumbnails, drafts, and export remain entirely client-side. The deployed app has no backend, Garmin authentication, Garmin requests, credentials, analytics, or activity-data uploads.
-- [ ] Export uses a new documented schema version and includes a required archive fingerprint plus, for every change, the full source path, Garmin activity ID evidence, recorded start time, activity type, original title, and proposed title.
-- [ ] The export contract is unambiguous and validated before download: missing required identity fields or ambiguous source identity blocks affected proposals with a visible reason.
-- [ ] A conforming standalone writer can verify the intended Garmin activity using only the exported JSON and remote Garmin data; it does not require the original ZIP.
-- [ ] Project documentation explains GitHub Pages use, the `/garmin-view/` base path, local-only processing, sensitive browser thumbnail storage and JSON downloads, the absence of Garmin access in the hosted app, and the separate writer trust boundary.
+- [x] Production-path coverage loads `/garmin-view/` and verifies ZIP import, route thumbnails, title editing, and JSON download using synthetic activity data.
+- [x] Import, parsing, thumbnails, drafts, and export remain entirely client-side. The deployed app has no backend, Garmin authentication, Garmin requests, credentials, analytics, or activity-data uploads.
+- [x] Export uses a new documented schema version and includes a required archive fingerprint plus, for every change, the full source path, Garmin activity ID evidence, recorded start time, activity type, original title, and proposed title.
+- [x] The export contract is unambiguous and validated before download: missing required identity fields or ambiguous source identity blocks affected proposals with a visible reason.
+- [x] A conforming standalone writer can verify the intended Garmin activity using only the exported JSON and remote Garmin data; it does not require the original ZIP.
+- [x] Project documentation explains GitHub Pages use, the `/garmin-view/` base path, local-only processing, sensitive browser thumbnail storage and JSON downloads, the absence of Garmin access in the hosted app, and the separate writer trust boundary.
 
 ## Scope
 
@@ -32,3 +32,13 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 - The next export version supersedes spec 004’s version 1 handoff where needed. Preserve `archiveFingerprint`, `sourceFile`, and original/proposed titles while adding the required Garmin ID evidence, recorded start time, and activity type; document exact field names and nullability with the implementation.
 - Garmin ID evidence is a candidate identity claim, not authorization to write. The standalone writer must independently verify it against remote identity data, present the proposed changes for review, require explicit confirmation, journal the operation, write only the title, and read the title back.
 - This separation supports the manifesto’s privacy and trustworthy-write-back principles: hosting serves code only, while sensitive Garmin access remains an explicit local operation.
+
+## Implementation decisions
+
+- Vite's base path and the browser test server use `/garmin-view/`. The `Deploy Pages` workflow runs on `main`, gates its `dist` upload on the browser suite, and deploys that artifact using GitHub Pages' environment and scoped deployment permissions. Pages must be enabled with GitHub Actions as the source; first hosted deployment awaits merging this feature.
+- The website has no Garmin API client, auth controls, result synchronization, proxy, or backend. Spec 006's grouping behavior remains intact.
+- Schema version **2** has exactly `schemaVersion`, `archiveFingerprint` (64 lowercase SHA-256 hex characters), and nonempty `changes`. Each change requires non-null `sourceFile`, `garminActivityId`, `recordedStartTime`, `activityType`, `originalTitle`, and `newTitle`. See README for the exact constraints and writer commands.
+- `garminActivityId` is a positive decimal string derived from the `garmin-<id>.gpx` basename; `recordedStartTime` is the viewer's recorded date in UTC `YYYY-MM-DDTHH:mm:ss.sssZ`, year 0001–9999. Unknown dates/types or unverifiable IDs block affected drafts. Preserve full source paths and original/proposed titles.
+- Duplicate source paths or proposed target IDs block the export. Visible per-source reasons include hidden drafts. Block the whole download rather than silently omit proposals; preserve all drafts for correction. The UTF-8 JSON limit is 1 MiB in both units.
+- The fingerprint is provenance only, not a signature or remotely verified identity. The spec-005 writer validates all supplied evidence and owns the Garmin trust boundary; it requires no original ZIP. Version 1 must be re-exported, not inferred.
+- A shared synthetic JSON fixture is checked against the actual project-path browser download and accepted by CLI tests. Browser coverage verifies import, route previews, hidden title proposals, static asset paths, absent Garmin controls, and no uploads or non-static HTTP requests.

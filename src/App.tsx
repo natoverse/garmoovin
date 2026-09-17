@@ -5,7 +5,7 @@ import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
 import { SimilaritySession, type SimilarityGroup } from './similarity'
 import { ThumbnailCache } from './thumbnail-cache'
-import { createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload } from './title-edits'
+import { createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
 import { useSimilarity } from './use-similarity'
 import './App.css'
 
@@ -161,7 +161,8 @@ export default function App() {
   const changesSignature = JSON.stringify(changes)
   const hasUnexportedChanges = changes.length > 0 && changesSignature !== lastExportSignature
   const duplicateSourceFiles = new Set(progress?.duplicateSourceFiles ?? [])
-  const hasBlockedChanges = changes.some((change) => duplicateSourceFiles.has(change.sourceFile))
+  const exportErrors = titleExportErrors(changes, duplicateSourceFiles)
+  const hasBlockedChanges = exportErrors.size > 0
   const { groups, analyzing } = useSimilarity(similarity.current, visibleActivities, grouping, tolerance)
   const byId = new Map(grouping ? visibleActivities.map((activity) => [activity.id, activity]) : [])
   const groupById = new Map(groups.flatMap((group, index) => group.members.map((id) => [id, { group, index }] as const)))
@@ -299,6 +300,7 @@ export default function App() {
               <div>
                 <h2>Proposed title changes</h2>
                 <p>Draft a new title beside the original. Save exports all proposals, including hidden rows.</p>
+                <p>This website never connects to Garmin. Download the JSON and use the separate Python CLI to review and apply it locally.</p>
               </div>
               <button type="button" className="primary-button" disabled={saving || loading || changes.length === 0 || hasBlockedChanges} onClick={saveTitles}>
                 {saving ? 'Preparing JSON...' : `Save JSON (${changes.length})`}
@@ -310,7 +312,10 @@ export default function App() {
                 : changes.length > 0 ? 'Current proposals match the latest requested export. Drafts remain editable.'
                 : 'Leave a new title empty to keep the existing title. No changes are made to Garmin.'}
             </p>
-            {hasBlockedChanges && <p className="export-error" role="alert">Some proposed renames have duplicate GPX paths. Clear those proposals or open an archive with unique paths before saving. No partial file will be exported.</p>}
+            {hasBlockedChanges && <div className="export-error" role="alert">
+              <p>Some proposals lack valid identity evidence or have duplicate GPX paths. Clear or correct those proposals before saving. No partial file will be exported.</p>
+              <ul>{Array.from(exportErrors, ([path, reason]) => <li key={path}>{path}: {reason}</li>)}</ul>
+            </div>}
             {exportNotice && <p className={exportNotice.error ? 'export-error' : 'export-notice'} role={exportNotice.error ? 'alert' : undefined} aria-live={exportNotice.error ? undefined : 'polite'}>{exportNotice.message}</p>}
           </div>
         )}
@@ -344,9 +349,9 @@ export default function App() {
                         placeholder="Leave blank to keep title"
                         autoComplete="off"
                         spellCheck={false}
-                        aria-describedby={duplicateSourceFiles.has(activity.sourceFile) ? `duplicate-path-${activity.id}` : undefined}
+                        aria-describedby={exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile) ? `identity-error-${activity.id}` : undefined}
                       />
-                      {duplicateSourceFiles.has(activity.sourceFile) && <p className="field-error" id={`duplicate-path-${activity.id}`}>Duplicate GPX path: {activity.sourceFile}. Renames for this path cannot be exported.</p>}
+                      {(exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile)) && <p className="field-error" id={`identity-error-${activity.id}`}>{exportErrors.get(activity.sourceFile) ?? `Duplicate GPX path: ${activity.sourceFile}. Renames for this path cannot be exported.`}</p>}
                     </td>
                     <td><span className="type-label">{activity.type}</span></td>
                     <td className="activity-date">{activity.date === null ? 'Unknown' : (
