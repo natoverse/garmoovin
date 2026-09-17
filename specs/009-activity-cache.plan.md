@@ -1,6 +1,6 @@
 # Plan: Fast Repeat Imports with Activity-ID Caching
 
-**Status:** Proposed for review with spec 009. Implementation has not started.
+**Status:** Implemented on the feature branch after spec/design review in PR #13; implementation remains subject to PR review.
 
 ## Approach
 

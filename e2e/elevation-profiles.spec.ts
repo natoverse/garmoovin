@@ -197,37 +197,38 @@ test('profiles follow duplicate-name activities through drafts, filters, groupin
   expect(await page.evaluate(() => window.elevationProbe.parses)).toBe(3)
 })
 
-test('route cache hits, clearing, and rendering/storage failures cannot stale or remove elevation profiles', async ({ page }) => {
+test('cached profiles remain until clearing; processing and storage failures keep fresh profiles usable', async ({ page }) => {
   await installProbe(page)
   await page.goto('./')
-  await selectZip(page, await zip([['route.gpx', route()]]))
+  await selectZip(page, await zip([['garmin-1.gpx', route()]]))
   await expectLoaded(page, 1)
   expect(await page.evaluate(() => window.elevationProbe.renders)).toBe(1)
   await page.reload()
   await expect(page.locator('tbody tr')).toHaveCount(0)
   const requests: string[] = []
   page.on('request', (request) => { if (/^https?:/.test(request.url())) requests.push(request.url()) })
-  const changed = await zip([['route.gpx', route('Changed elevation', ['100', '0', '100'])]])
+  const changed = await zip([['garmin-1.gpx', route('Changed elevation', ['100', '0', '100'])]])
   await selectZip(page, changed)
   await expectLoaded(page, 1)
   expect(await page.evaluate(() => window.elevationProbe.renders)).toBe(0)
-  await expect(page.locator('.elevation-range')).toHaveText('0 to 100 m')
-  const path = await profilePath(page, 'route.gpx').getAttribute('d')
-  await page.getByRole('button', { name: 'Clear thumbnail cache' }).click()
-  await expect(page.locator('.cache-notice')).toContainText('Thumbnail cache cleared')
-  await expect(profilePath(page, 'route.gpx')).toHaveAttribute('d', path!)
+  await expect(page.locator('.elevation-range')).toHaveText('-10 to 30 m')
+  const path = await profilePath(page, 'garmin-1.gpx').getAttribute('d')
+  await page.getByRole('button', { name: 'Clear activity cache' }).click()
+  await expect(page.locator('.cache-notice')).toContainText('Activity cache cleared')
+  await expect(profilePath(page, 'garmin-1.gpx')).toHaveAttribute('d', path!)
   await page.evaluate(() => {
-    indexedDB.open = () => { throw new Error('Synthetic storage failure.') }
+    IDBDatabase.prototype.transaction = () => { throw new Error('Synthetic storage failure.') }
     HTMLCanvasElement.prototype.toBlob = (callback) => callback(null)
   })
   await selectZip(page, changed)
   await expectLoaded(page, 1)
   await expect(page.locator('.route-preview')).toHaveText('Thumbnail unavailable')
   await expect(page.locator('.cache-warning')).toContainText('Synthetic storage failure')
-  await expect(profilePath(page, 'route.gpx')).toHaveAttribute('d', path!)
+  await expect(page.locator('.elevation-range')).toHaveText('0 to 100 m')
+  await expect(profilePath(page, 'garmin-1.gpx')).not.toHaveAttribute('d', path!)
   expect(requests).toEqual([])
   expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0)
-  expect(await page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name))).toEqual(['groomin-thumbnails'])
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name))).toEqual(['groomin-activities'])
 })
 
 test('pending large imports remain usable and replacement prevents stale profiles', async ({ page }) => {

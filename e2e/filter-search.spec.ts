@@ -172,8 +172,8 @@ test('filtering reuses loaded metadata and images, even after their disk cache i
   page.on('request', (request) => {
     if (/^https?:/.test(request.url())) network.push(request.url())
   })
-  await page.getByRole('button', { name: 'Clear thumbnail cache' }).click()
-  await expect(page.locator('.cache-notice')).toContainText('Thumbnail cache cleared.')
+  await page.getByRole('button', { name: 'Clear activity cache' }).click()
+  await expect(page.locator('.cache-notice')).toContainText('Activity cache cleared.')
   await page.getByRole('button', { name: 'Select none', exact: true }).click()
   await search(page).fill('mount')
   await page.getByRole('button', { name: 'Select all', exact: true }).click()

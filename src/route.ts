@@ -1,6 +1,21 @@
 export type Coordinate = readonly [longitude: number, latitude: number]
 export type Route = Coordinate[][]
 
+export type Thumbnail =
+  | { status: 'pending' }
+  | { status: 'none' }
+  | { status: 'ready'; image: Blob }
+  | { status: 'error'; message: string }
+
+export async function prepareThumbnail(route: Route, signal: AbortSignal): Promise<Thumbnail> {
+  signal.throwIfAborted()
+  const projected = projectRoute(route)
+  if (!projected.length) return { status: 'none' }
+  const image = await renderRoute(projected)
+  signal.throwIfAborted()
+  return { status: 'ready', image }
+}
+
 export const THUMBNAIL_SETTINGS = {
   version: 2,
   projection: 'local-equirectangular',
@@ -17,10 +32,6 @@ export const THUMBNAIL_SETTINGS = {
 export async function digest(data: ArrayBuffer): Promise<string> {
   const bytes = await crypto.subtle.digest('SHA-256', data)
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
-export function routeKey(route: Route): Promise<string> {
-  return digest(new TextEncoder().encode(JSON.stringify({ settings: THUMBNAIL_SETTINGS, route })).buffer)
 }
 
 export function projectRoute(route: Route): Route {

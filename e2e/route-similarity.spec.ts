@@ -328,7 +328,7 @@ test('drafts survive regrouping under original-title search and hidden drafts ex
   await expect(aTitle).toHaveValue('First proposed name')
 })
 
-test('thumbnail cache hits, clearing, and rendering/storage failures preserve matching without network or new persistence', async ({ page }) => {
+test('activity cache hits, clearing, and rendering/storage failures preserve matching without network', async ({ page }) => {
   await installProbe(page)
   const entries = files.slice(0, 2)
   const archive = await zip(entries)
@@ -342,15 +342,15 @@ test('thumbnail cache hits, clearing, and rendering/storage failures preserve ma
   await grouping(page).check()
   await expectGroups(page, [['Green A', 'Green B']])
   const before = await page.evaluate(() => ({ parses: window.similarityProbe.parses, renders: window.similarityProbe.renders }))
-  await page.getByRole('button', { name: 'Clear thumbnail cache' }).click()
-  await expect(page.locator('.cache-notice')).toContainText('Thumbnail cache cleared')
+  await page.getByRole('button', { name: 'Clear activity cache' }).click()
+  await expect(page.locator('.cache-notice')).toContainText('Activity cache cleared')
   for (const value of [20, 100, 10, 50]) await setTolerance(page, value)
   await search(page).fill('a')
   await search(page).fill('')
   await expectGroups(page, [['Green A', 'Green B']])
   expect(await page.evaluate(() => ({ parses: window.similarityProbe.parses, renders: window.similarityProbe.renders }))).toEqual(before)
   await page.evaluate(() => {
-    indexedDB.open = () => { throw new Error('Synthetic storage failure') }
+    IDBDatabase.prototype.transaction = () => { throw new Error('Synthetic storage failure') }
     HTMLCanvasElement.prototype.toBlob = (callback) => callback(null)
   })
   await selectZip(page, archive, 'uncached.zip')
@@ -360,7 +360,7 @@ test('thumbnail cache hits, clearing, and rendering/storage failures preserve ma
   await expect(page.locator('.route-preview')).toHaveText(['Thumbnail unavailable', 'Thumbnail unavailable'])
   expect(requests).toEqual([])
   expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0)
-  expect(await page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name))).toEqual(['groomin-thumbnails'])
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name))).toEqual(['groomin-activities'])
 })
 
 test('superseded group calculations cannot publish stale memberships after slider, filter or archive changes', async ({ page }) => {

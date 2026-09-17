@@ -46,3 +46,7 @@ This is the first step toward the route-first gallery described in `MANIFESTO.md
 - Only timestamps with an explicit timezone and valid calendar fields are accepted. GPX 1.0 root-level name/time fields serve as the legacy metadata fallback.
 - Imports progressively populate the list. Replacing an archive cancels the previous import and prevents stale results from appearing.
 - Generated activity data belongs in the ignored `local-data/` directory. The app does not persist imports or copy archives into build assets.
+
+## Activity-ID caching revision (spec 009)
+
+- Spec 009 supersedes the session-only metadata restriction: complete cached activities restore imported names/types/dates by Garmin ID without parsing GPX again. Current ZIP membership, source paths, and per-import row identities still come from the newly selected archive. Changed imported metadata is intentionally stale until manual clearing. Source archives and title drafts remain unpersisted.

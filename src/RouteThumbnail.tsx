@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Thumbnail } from './thumbnail-cache'
+import type { Thumbnail } from './route'
 
 export default function RouteThumbnail({ thumbnail, name }: { thumbnail: Thumbnail; name: string }) {
   const image = thumbnail.status === 'ready' ? thumbnail.image : null
