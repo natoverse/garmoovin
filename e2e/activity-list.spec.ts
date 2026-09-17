@@ -54,6 +54,55 @@ test('uses name fallbacks and retains unrecognized activity types', async ({ pag
   ])
 })
 
+test('opens the exact Garmin activity in an isolated new tab without losing drafts', async ({ page, context }) => {
+  const requests: { url: string; referer: string | undefined }[] = []
+  await context.route('https://connect.garmin.com/**', async (route) => {
+    requests.push({ url: route.request().url(), referer: route.request().headers()['referer'] })
+    await route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Synthetic Garmin activity</title>' })
+  })
+  await selectZip(page, await zip([
+    ['garmin-42.gpx', gpx('<trk><name>Same name</name></trk>')],
+    ['nested/GARMIN-9007199254740993.GPX', gpx('<trk><name>Same name</name></trk>')],
+  ]))
+  await expectLoaded(page, 2)
+  const link = page.getByRole('link', { name: 'View on Garmin Connect for Same name (garmin-42.gpx) (opens in a new tab)', exact: true })
+  const largeIdLink = page.getByRole('link', { name: /nested\/GARMIN-9007199254740993.GPX/ })
+  await expect(page.getByRole('link')).toHaveCount(2)
+  await expect(link).toHaveAttribute('href', 'https://connect.garmin.com/modern/activity/42')
+  await expect(largeIdLink).toHaveAttribute('href', 'https://connect.garmin.com/modern/activity/9007199254740993')
+  await expect(link).toHaveAttribute('target', '_blank')
+  await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  const title = page.getByRole('textbox', { name: 'Title for Same name (garmin-42.gpx)', exact: true })
+  await title.fill('Local draft')
+  await page.getByRole('searchbox').fill('Same name')
+  await expect(link).toHaveAttribute('href', 'https://connect.garmin.com/modern/activity/42')
+  await title.focus()
+  await page.keyboard.press('Tab')
+  await expect(link).toBeFocused()
+  expect(requests).toEqual([])
+  const popupPromise = page.waitForEvent('popup')
+  await page.keyboard.press('Enter')
+  const popup = await popupPromise
+  await popup.waitForLoadState()
+  await expect(popup).toHaveURL('https://connect.garmin.com/modern/activity/42')
+  expect(await popup.evaluate(() => window.opener === null && document.referrer === '')).toBe(true)
+  expect(requests).toEqual([{ url: 'https://connect.garmin.com/modern/activity/42', referer: undefined }])
+  await expect(page).toHaveURL(/\/groomin\/$/)
+  await expect(title).toHaveValue('Local draft')
+  await popup.close()
+})
+
+test('does not guess Garmin links from invalid filenames or GPX metadata', async ({ page }) => {
+  const filenames = ['other.gpx', 'garmin-0.gpx', 'garmin-01.gpx', 'garmin--1.gpx', 'garmin-12abc.gpx', 'garmin-12.gpx.bak.gpx']
+  await selectZip(page, await zip(filenames.map((name) => [
+    name,
+    gpx('<metadata><link href="https://connect.garmin.com/modern/activity/42"/></metadata><trk><name>garmin-42.gpx</name></trk>'),
+  ])))
+  await expectLoaded(page, filenames.length)
+  await expect(page.getByRole('link')).toHaveCount(0)
+  await expect(page.getByText('Garmin Connect link unavailable — no activity ID', { exact: true })).toHaveCount(filenames.length)
+})
+
 test('uses the earliest valid trackpoint across tracks and segments, not export dates', async ({ page }) => {
   await selectZip(page, await zip([
     ['a.gpx', gpx(`<metadata><time>2030-01-01T00:00:00Z</time></metadata>

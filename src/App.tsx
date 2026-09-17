@@ -6,7 +6,7 @@ import RouteThumbnail from './RouteThumbnail'
 import ElevationPreview, { ElevationStats } from './ElevationPreview'
 import { SimilaritySession, type SimilarityGroup } from './similarity'
 import { ActivityCache } from './activity-cache'
-import { createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
+import { candidateActivityId, createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
 import { useSimilarity } from './use-similarity'
 import logo from './assets/groomin-logo.jpg'
 import './theme.css'
@@ -193,6 +193,7 @@ export default function App() {
           <tbody>
             {list.map((activity) => {
               const group = groupById.get(activity.id)
+              const garminActivityId = candidateActivityId(activity.sourceFile)
               return (
                 <tr key={activity.id} data-route-group={group?.members[0]}>
                   <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
@@ -225,6 +226,18 @@ export default function App() {
                       spellCheck={false}
                       aria-describedby={`title-edit-help${exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile) ? ` identity-error-${activity.id}` : ''}`}
                     />
+                    <p className="activity-connect-link">
+                      {garminActivityId ? (
+                        <a
+                          href={`https://connect.garmin.com/modern/activity/${garminActivityId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={`View on Garmin Connect for ${activity.name} (${activity.sourceFile}) (opens in a new tab)`}
+                        >
+                          View on Garmin Connect <span aria-hidden="true">↗</span>
+                        </a>
+                      ) : 'Garmin Connect link unavailable — no activity ID'}
+                    </p>
                     {(exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile)) && <p className="field-error" id={`identity-error-${activity.id}`}>{exportErrors.get(activity.sourceFile) ?? `Duplicate GPX path: ${activity.sourceFile}. Renames for this path cannot be exported.`}</p>}
                     <ElevationStats profile={activity.elevation} />
                     {group && group.status !== 'matched' && <p className="similarity-status">{groupLabel(group)}</p>}
