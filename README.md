@@ -19,6 +19,8 @@ Open the app and choose **Open GPX ZIP**. Select a Garmin GPX archive from your 
 
 Dates are labeled UTC. Missing names fall back to GPX metadata or the filename; unavailable types and dates show **Unknown**. Unreadable files are listed separately without hiding the rest of the archive. **Choose another ZIP** replaces the current import, including any errors.
 
+Elapsed duration appears below each date as **hh:mm**, including in grouped lists. It spans the earliest to latest valid GPX trackpoint timestamps, including pauses, rather than moving time. Seconds are truncated and hours can exceed 24. Fewer than two valid trackpoint timestamps displays **Unknown**.
+
 Use **View on Garmin Connect** below an activity's title to review its full details on Garmin's website in a new tab, keeping your local drafts open. Garmin may ask you to sign in there. Links are available in normal and grouped lists when the source filename matches `garmin-<positive integer>.gpx` (case-insensitive, including nested folders). Other filenames show **Garmin Connect link unavailable — no activity ID**; Groomin does not guess a match from the activity name.
 
 ## Filtering and search
@@ -39,7 +41,9 @@ Images are generated in the browser and saved as part of the activity cache desc
 
 Groomin uses IndexedDB, not `localStorage`: database **`groomin-activities`**, with **`activities`** and **`pairs`** stores. A `garmin-<positive integer>.gpx` filename supplies the activity ID, retained as a string. Nested folders and case-insensitive filenames are supported. The cache survives reloads and works across overlapping archives; only entries in the ZIP you select appear.
 
-Each complete activity record contains its starting title/type/date, route PNG, elevation profile and statistics, and prepared similarity geometry. Titles and types initially come from GPX; **Save JSON** updates only the exported fields in the cache for the next load. A warm hit skips GPX extraction, XML parsing, route hashing/projection, and preview/geometry preparation. Previously computed pair distances are also reused; bundles are still assembled for your current filters and tolerance. New IDs are processed normally. The viewer reports how many entries came **from cache** versus were **processed**.
+Each complete activity record contains its starting title/type/date and elapsed duration, route PNG, elevation profile and statistics, and prepared similarity geometry. Titles and types initially come from GPX; **Save JSON** updates only the exported fields in the cache for the next load. A warm hit skips GPX extraction, XML parsing, route hashing/projection, and preview/geometry preparation. Previously computed pair distances are also reused; bundles are still assembled for your current filters and tolerance. New IDs are processed normally. The viewer reports how many entries came **from cache** versus were **processed**.
+
+Older activity records without duration are backfilled from the selected GPX once, counted as processed, without discarding remembered titles/types or prepared previews and comparisons. Subsequent imports reuse the cached duration, including **Unknown**.
 
 **Clear activity cache** removes all those records and pair scores, including remembered titles and types, plus both older thumbnail databases. Current activities and drafts stay on screen, and work already running in that tab cannot refill the cleared cache. Reselect the ZIP to rebuild from its files. Clear after changing metadata elsewhere or editing recorded GPX data. Edits exported through Save JSON do not require clearing: their exported titles/types become the starting values on reload. Dates, profiles, and geometry intentionally stay unchanged until clearing. There are no source freshness hashes, timestamps, TTLs, or automatic Garmin refreshes.
 

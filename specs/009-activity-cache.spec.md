@@ -89,3 +89,10 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 - Extend the existing Save JSON persistence boundary to exported activity types. Patch only explicitly exported title/type fields in complete records; a type-only edit must not overwrite a remembered title, and a title-only edit must not overwrite a remembered type.
 - Store the proposed type in display form in `metadata.type`, without changing dates, previews, geometry, pair scores, or the compatible database format. The next warm import uses it as the starting type for filtering and further exports, not as a pending draft.
 - Retain immutable current-session starting metadata, generation guards, download-first behavior, and visible persistence failures. Remembered types, like remembered titles, assume the user applies the JSON separately; they are not remote confirmation. Clearing restores GPX metadata on reimport.
+
+## Activity duration iteration (2026-09-18)
+
+- Cache elapsed duration in milliseconds (or `null` when unavailable) as activity metadata, preserving the parse-free warm path.
+- Retain database version 1 and accept older records without duration. On their next import, extract and parse just those GPX entries to backfill duration, while preserving cached titles, types, dates, previews, geometry, and pair scores. Count these entries as processed rather than full cache hits.
+- A completed backfill stores the new field, including unavailable durations, so later imports do not repeat parsing. Existing cancellation, cache-clearing, validation, and storage-failure behavior still applies.
+- Type editing and duration backfill coexist: migration preserves exported titles/types, and later title/type saves preserve the backfilled duration.

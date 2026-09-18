@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { importArchive, type ImportedActivity, type ImportProgress } from './archive'
-import { formatDate } from './gpx'
+import { formatDate, formatDuration } from './gpx'
 import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
 import ElevationPreview, { ElevationStats } from './ElevationPreview'
@@ -223,7 +223,7 @@ export default function App() {
     return (
       <div className="table-container" role="region" aria-label={label} tabIndex={0}>
         <table>
-          <caption className="visually-hidden">{label}. Activities with north-up route previews, newest first. Elevation profiles use independent distance and elevation scales. Dates are in UTC.</caption>
+          <caption className="visually-hidden">{label}. Activities with north-up route previews, newest first. Elevation profiles use independent distance and elevation scales. Dates are in UTC. Elapsed durations are in hours and minutes.</caption>
           <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="elevation-cell">Elevation</th><th scope="col" className="name-heading">Title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
           <tbody>
             {list.map((activity) => {
@@ -298,9 +298,15 @@ export default function App() {
                       ))}
                     </select>
                   </td>
-                  <td className="activity-date">{activity.date === null ? 'Unknown' : (
-                    <time dateTime={new Date(activity.date).toISOString()}>{formatDate(activity.date)}</time>
-                  )}</td>
+                  <td className="activity-date">
+                    <div className="activity-timestamp">{activity.date === null ? 'Unknown' : (
+                      <time dateTime={new Date(activity.date).toISOString()}>{formatDate(activity.date)}</time>
+                    )}</div>
+                    <div className="activity-duration">
+                      <span className="visually-hidden">Elapsed duration (hours:minutes): </span>
+                      {activity.durationMs === null ? 'Unknown' : formatDuration(activity.durationMs)}
+                    </div>
+                  </td>
                 </tr>
               )
             })}
