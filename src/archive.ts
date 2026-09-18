@@ -109,12 +109,17 @@ export async function importArchive(
               cache.invalidRecord()
             }
             if (geometry) {
-              if (record.metadata.durationMs === undefined) {
+              if (record.metadata.durationMs === undefined || record.metadata.distanceMeters === undefined) {
                 processed++
                 extracted++
                 const xml = await entry.getData(new TextWriter(), { signal, checkSignature: true })
                 signal.throwIfAborted()
-                record.metadata = { ...record.metadata, durationMs: parseGpx(xml, entry.filename, String(index)).activity.durationMs }
+                const { durationMs, distanceMeters } = parseGpx(xml, entry.filename, String(index)).activity
+                record.metadata = {
+                  ...record.metadata,
+                  durationMs: record.metadata.durationMs === undefined ? durationMs : record.metadata.durationMs,
+                  distanceMeters: record.metadata.distanceMeters === undefined ? distanceMeters : record.metadata.distanceMeters,
+                }
                 writes.set(id, record)
               } else {
                 cacheHits++
@@ -122,6 +127,7 @@ export async function importArchive(
               activities.push({
                 ...record.metadata, id: String(index), sourceFile: entry.filename,
                 durationMs: record.metadata.durationMs ?? null,
+                distanceMeters: record.metadata.distanceMeters ?? null,
                 thumbnail: record.thumbnail, elevation: record.elevation, geometry,
               })
               cached.delete(id)
@@ -194,7 +200,10 @@ export async function importArchive(
           if (id && geometry && (completed.thumbnail.status === 'ready' || completed.thumbnail.status === 'none') &&
             (completed.elevation.status === 'ready' || completed.elevation.status === 'none')) {
             writes.set(id, {
-              metadata: { name: completed.name, type: completed.type, date: completed.date, durationMs: completed.durationMs },
+              metadata: {
+                name: completed.name, type: completed.type, date: completed.date,
+                durationMs: completed.durationMs, distanceMeters: completed.distanceMeters,
+              },
               thumbnail: completed.thumbnail,
               elevation: completed.elevation.status === 'ready' ? completed.elevation : { status: 'none' },
               geometry,

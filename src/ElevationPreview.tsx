@@ -1,6 +1,8 @@
 import { memo } from 'react'
 import { ELEVATION_FRAME, type ElevationProfile } from './elevation'
-import { formatFeet, formatMiles } from './units'
+import { formatActivityAverage, formatFeet, formatMiles } from './units'
+import { activityAverageMetric } from './activity-types'
+import type { Activity } from './gpx'
 
 function profileLabels(profile: Extract<ElevationProfile, { status: 'ready' }>) {
   let minimum = formatFeet(profile.minElevation)
@@ -15,14 +17,25 @@ function profileLabels(profile: Extract<ElevationProfile, { status: 'ready' }>) 
   }
 }
 
-export const ElevationStats = memo(function ElevationStats({ profile }: { profile: ElevationProfile }) {
-  if (profile.status !== 'ready') return null
-  const { range, distance } = profileLabels(profile)
+export const ActivityStats = memo(function ActivityStats({
+  profile, type, durationMs, distanceMeters,
+}: { profile: ElevationProfile } & Pick<Activity, 'type' | 'durationMs' | 'distanceMeters'>) {
+  const labels = profile.status === 'ready' ? profileLabels(profile) : null
+  const metric = activityAverageMetric(type)
+  if (!labels && !metric) return null
   return (
     <div className="activity-stats">
-      <div>Elevation: <span className="elevation-range">{range}</span></div>
-      <div>Distance: <span className="elevation-distance">{distance}</span></div>
-      {profile.partial && <div className="elevation-gap">Partial data / gaps</div>}
+      {labels && <>
+        <div>Elevation: <span className="elevation-range">{labels.range}</span></div>
+        <div>Distance: <span className="elevation-distance">{labels.distance}</span></div>
+      </>}
+      {metric && <div className="activity-average" title="Based on recorded distance and elapsed time, including pauses">
+        {metric === 'pace' ? 'Avg pace: ' : 'Avg speed: '}
+        <span aria-label={metric === 'pace' ? 'minutes and seconds per mile' : 'miles per hour'}>
+          {formatActivityAverage(distanceMeters, durationMs, metric)}
+        </span>
+      </div>}
+      {profile.status === 'ready' && profile.partial && <div className="elevation-gap">Partial data / gaps</div>}
     </div>
   )
 })

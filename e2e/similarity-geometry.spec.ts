@@ -19,7 +19,7 @@ const signal = () => new AbortController().signal
 const feet = (meters: number) => meters / METERS_PER_FOOT
 const activity = (
   id: string, geometry: SimilarityGeometry, date: number | null = 1, sourceFile = `${id}.gpx`,
-): SimilarityActivity => ({ id, geometry, date, durationMs: null, sourceFile, name: id, type: 'Running' })
+): SimilarityActivity => ({ id, geometry, date, durationMs: null, distanceMeters: null, sourceFile, name: id, type: 'Running' })
 
 async function ready(session: SimilaritySession, coordinates: Route) {
   const geometry = await session.prepare(coordinates, signal())

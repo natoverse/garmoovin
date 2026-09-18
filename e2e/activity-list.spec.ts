@@ -1,5 +1,11 @@
 import { expect, test } from './test'
 import { expectLoaded, expectMetadataRows, gpx, point, selectZip, track, zip } from './fixtures'
+import { formatActivityAverage } from '../src/units'
+import { activityAverageMetric } from '../src/activity-types'
+
+const milePoint = (miles: number, seconds: number, elevation = '') =>
+  `<trkpt lat="0" lon="${miles * 1609.344 / 6_371_008.8 * 180 / Math.PI}">
+    <time>${new Date(Date.UTC(2025, 0, 1) + seconds * 1000).toISOString()}</time>${elevation}</trkpt>`
 
 test.beforeEach(async ({ page }) => {
   await page.goto('./')
@@ -199,6 +205,109 @@ test('keeps duration visible in matched route groups and on narrow screens', asy
   await expect(page.locator('.route-bundle')).toHaveCount(1)
   await expect(page.locator('.route-bundle .activity-duration')).toHaveText(Array(2).fill('Elapsed duration (hours:minutes): 01:05'))
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+test('formats elapsed averages and classifies only recognized foot and cycling types', () => {
+  for (const type of ['Running', 'trail-running', 'TREADMILL RUNNING', 'track_running', 'indoor_running',
+    'virtual_run', 'ultra_run', 'street_running', 'obstacle_run', 'walking', 'casual_walking',
+    'speed_walking', 'hiking', 'mountaineering', 'snow_shoe']) {
+    expect(activityAverageMetric(type)).toBe('pace')
+  }
+  for (const type of ['Cycling', 'road_biking', 'mountain-biking', 'Gravel Cycling', 'cyclocross',
+    'indoor_cycling', 'virtual_ride', 'recumbent_cycling', 'hand_cycling', 'bmx',
+    'downhill_biking', 'e_bike_fitness', 'e_bike_mountain']) {
+    expect(activityAverageMetric(type)).toBe('speed')
+  }
+  for (const type of ['', 'Unknown', '999', 'future_running', 'lap_swimming', 'strength_training', 'motorcycling']) {
+    expect(activityAverageMetric(type)).toBeNull()
+  }
+  expect(formatActivityAverage(1609.344, 599_600, 'pace')).toBe('10:00 /mi')
+  expect(formatActivityAverage(1609.344, 3_661_000, 'pace')).toBe('61:01 /mi')
+  expect(formatActivityAverage(1609.344, 240_000, 'speed')).toBe('15.0 mph')
+  expect(formatActivityAverage(1609.344, 599_600, 'speed')).toBe('6.0 mph')
+  for (const metric of ['pace', 'speed'] as const) {
+    for (const invalid of [null, 0, -1, NaN, Infinity, -Infinity]) {
+      expect(formatActivityAverage(invalid, 600_000, metric)).toBe('Unknown')
+      expect(formatActivityAverage(1609.344, invalid, metric)).toBe('Unknown')
+    }
+  }
+})
+
+test('shows pace or speed without elevation, updates draft units, and restores cached averages', async ({ page }) => {
+  const cases = [
+    { type: 'running', seconds: 600, expected: 'Avg pace: 10:00 /mi' },
+    { type: 'walking', seconds: 1200, expected: 'Avg pace: 20:00 /mi' },
+    { type: 'hiking', seconds: 1500, expected: 'Avg pace: 25:00 /mi' },
+    { type: 'cycling', seconds: 240, expected: 'Avg speed: 15.0 mph' },
+    { type: 'mountain_biking', seconds: 360, expected: 'Avg speed: 10.0 mph' },
+  ]
+  const archive = await zip(cases.map(({ type, seconds }, index) => [
+    `garmin-${index + 1}.gpx`,
+    gpx(`<trk><name>${type}</name><type>${type}</type><trkseg>${milePoint(0, 0)}${milePoint(1, seconds)}</trkseg></trk>`),
+  ]))
+  await selectZip(page, archive)
+  await expectLoaded(page, cases.length)
+  await expect(page.getByText('No elevation data', { exact: true })).toHaveCount(cases.length)
+  for (const { type, expected } of cases) {
+    const row = page.locator('tbody tr').filter({ has: page.getByRole('textbox', { name: `Title for ${type} (`, exact: false }) })
+    await expect(row.locator('.activity-average')).toHaveText(expected)
+  }
+  const first = page.locator('tbody tr').filter({ has: page.locator('.activity-name[title="garmin-1.gpx"]') })
+  const editor = first.getByRole('combobox')
+  await editor.focus()
+  await editor.selectOption('cycling')
+  await expect(first.locator('.activity-average')).toHaveText('Avg speed: 6.0 mph')
+  await editor.press('Escape')
+  await expect(first.locator('.activity-average')).toHaveText('Avg pace: 10:00 /mi')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('checkbox', { name: 'Group similar routes' }).check()
+  await expect(page.locator('.route-bundle')).toHaveCount(1)
+  await expect(page.locator('.route-bundle .activity-average')).toHaveCount(cases.length)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.reload()
+  await selectZip(page, archive)
+  await expectLoaded(page, cases.length)
+  await expect(page.locator('.cache-summary')).toHaveText('5 from cache · 0 processed')
+  await expect(first.locator('.activity-average')).toHaveText('Avg pace: 10:00 /mi')
+})
+
+test('averages respect segment and coordinate gaps, retain pauses, and handle unavailable data', async ({ page }) => {
+  const cases = [
+    {
+      name: 'Gaps', type: 'trail_running', expected: 'Avg pace: 10:00 /mi',
+      body: `<trk><trkseg>${milePoint(0, 0, '<ele>0</ele>')}${milePoint(0.25, 60, '<ele>10</ele>')}
+        <trkpt lat="bad" lon="bad"/><trkpt lat="0" lon="181"/>
+        ${milePoint(10, 90)}${milePoint(10.25, 120)}</trkseg>
+        <trkseg>${milePoint(20, 180)}${milePoint(20.25, 240)}</trkseg></trk>
+        <trk><trkseg>${milePoint(30, 300)}${milePoint(30.25, 360)}${milePoint(30.25, 600)}</trkseg></trk>`,
+    },
+    { name: 'Missing time', type: 'running', expected: 'Avg pace: Unknown',
+      body: '<trk><trkseg><trkpt lat="0" lon="0"/><trkpt lat="0" lon="1"/></trkseg></trk>' },
+    { name: 'Zero time', type: 'cycling', expected: 'Avg speed: Unknown',
+      body: `<trk><trkseg>${milePoint(0, 0)}${milePoint(1, 0)}</trkseg></trk>` },
+    { name: 'Stationary', type: 'walking', expected: 'Avg pace: Unknown',
+      body: `<trk><trkseg>${milePoint(0, 0)}${milePoint(0, 600)}</trkseg></trk>` },
+    { name: 'No distance', type: 'hiking', expected: 'Avg pace: Unknown',
+      body: '<trk><trkseg><trkpt><time>2025-01-01T00:00:00Z</time></trkpt><trkpt><time>2025-01-01T01:00:00Z</time></trkpt></trkseg></trk>' },
+    { name: 'Isolated points', type: 'running', expected: 'Avg pace: Unknown',
+      body: `<trk><trkseg>${milePoint(0, 0)}</trkseg><trkseg>${milePoint(1, 600)}</trkseg></trk>` },
+    { name: 'Metadata time only', type: 'cycling', expected: 'Avg speed: Unknown',
+      body: `<metadata><time>2024-01-01T00:00:00Z</time></metadata><trk><trkseg>${milePoint(0, 600)}<trkpt lat="0" lon="1"/></trkseg></trk>` },
+    { name: 'Other', type: 'lap_swimming', expected: null,
+      body: `<trk><trkseg>${milePoint(0, 0)}${milePoint(1, 600)}</trkseg></trk>` },
+  ]
+  await selectZip(page, await zip(cases.map(({ name, type, body }) => [
+    `${name}.gpx`, gpx(`<trk><name>${name}</name><type>${type}</type></trk>${body}`),
+  ])))
+  await expectLoaded(page, cases.length)
+  for (const { name, expected } of cases) {
+    const row = page.locator('tbody tr').filter({ has: page.locator(`.activity-name[title="${name}.gpx"]`) })
+    if (expected === null) await expect(row.locator('.activity-average')).toHaveCount(0)
+    else await expect(row.locator('.activity-average')).toHaveText(expected)
+  }
+  const gaps = page.locator('tbody tr').filter({ has: page.locator('.activity-name[title="Gaps.gpx"]') })
+  await expect(gaps.locator('.elevation-distance')).toHaveText('0 to 1 mi')
+  await expect(gaps.locator('.elevation-gap')).toHaveText('Partial data / gaps')
 })
 
 test('ignores foreign extension names and times', async ({ page }) => {
