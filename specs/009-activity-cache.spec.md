@@ -83,3 +83,9 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 
 - Spec 006 raises grouping work capacity 100× and retains up to 150,000 pair scores in memory. This accommodates all 136,503 possible comparisons among 523 activities without eviction forcing recalculation; the persistent pair store and cache-format version are unchanged.
 - Keep on-demand comparisons and bounded cache writes. Only completed scores are reusable; new activities or newly encountered pairs still incur first-time work. Preparation, geometry-memory limits, and cancellation remain unchanged.
+
+## Saved activity type decisions (2026-09-18)
+
+- Extend the existing Save JSON persistence boundary to exported activity types. Patch only explicitly exported title/type fields in complete records; a type-only edit must not overwrite a remembered title, and a title-only edit must not overwrite a remembered type.
+- Store the proposed type in display form in `metadata.type`, without changing dates, previews, geometry, pair scores, or the compatible database format. The next warm import uses it as the starting type for filtering and further exports, not as a pending draft.
+- Retain immutable current-session starting metadata, generation guards, download-first behavior, and visible persistence failures. Remembered types, like remembered titles, assume the user applies the JSON separately; they are not remote confirmation. Clearing restores GPX metadata on reimport.

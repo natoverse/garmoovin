@@ -10,7 +10,7 @@ from garminconnect import (
 )
 from garminconnect.client import token_file_path
 
-from .models import Account, utc_time
+from .models import Account, ActivityType, utc_time
 
 
 class GarminError(Exception):
@@ -20,7 +20,7 @@ class GarminError(Exception):
             "auth": "Garmin authentication is required. Run python -m garmin_writer login, then review again.",
             "rate_limit": "Garmin rate-limited this request. Wait before reconnecting or reviewing the remaining changes.",
             "not_found": "This activity is not accessible in the connected Garmin account.",
-            "rejected": "Garmin rejected the request. Review the activity and proposed title before trying again.",
+            "rejected": "Garmin rejected the request. Review the activity and proposed changes before trying again.",
             "unavailable": "Garmin could not be reached or returned an unexpected response.",
         }[kind])
 
@@ -104,3 +104,18 @@ class GarminAdapter:
         if self.api is None:
             raise GarminError("auth")
         self.call(lambda: self.api.set_activity_name(activity_id, title))
+
+    def activity_types(self) -> list[dict]:
+        if self.api is None:
+            raise GarminError("auth")
+        result = self.call(lambda: self.api.get_activity_types())
+        if not isinstance(result, list) or any(not isinstance(entry, dict) for entry in result):
+            raise GarminError("unavailable")
+        return result
+
+    def set_type(self, activity_id: str, activity_type: ActivityType) -> None:
+        if self.api is None:
+            raise GarminError("auth")
+        self.call(lambda: self.api.set_activity_type(
+            activity_id, activity_type.typeId, activity_type.typeKey, activity_type.parentTypeId,
+        ))

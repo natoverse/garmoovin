@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { expect, test, type Download, type Page } from './test'
-import { createTitleMappingExport, type TitleMappingExport } from '../src/title-edits'
+import { createTitleMappingExport, pendingTitleChanges, type TitleMappingExport } from '../src/title-edits'
 import { expectActivityNames, expectLoaded, gpx, selectZip, track, zip } from './fixtures'
 
 declare global {
@@ -26,6 +27,8 @@ const files: [string, string][] = [
 const title = (page: Page, path = 'nested/garmin-1.gpx', name = 'Green Mountain') =>
   page.getByRole('textbox', { name: `Title for ${name} (${path})`, exact: true })
 const saveButton = (page: Page) => page.getByRole('button', { name: /^Save JSON \(\d+\)$/ })
+const typeEditor = (page: Page, path = 'other/garmin-2.gpx', name = 'Green Mountain') =>
+  page.getByRole('combobox', { name: `Activity type for ${name} (${path})`, exact: true })
 const change = (newTitle: string, sourceFile = 'nested/garmin-1.gpx', originalTitle = 'Green Mountain'): TitleMappingExport['changes'][number] => {
   const id = /garmin-(\d+)\.gpx$/.exec(sourceFile)?.[1]
   if (!id) throw new Error('The synthetic export fixture requires a Garmin filename.')
@@ -64,8 +67,8 @@ async function save(page: Page) {
   return result
 }
 
-async function cachedTitle(page: Page, id = '1') {
-  return page.evaluate(async (id) => {
+async function cachedTitle(page: Page, id = '1', field: 'name' | 'type' = 'name') {
+  return page.evaluate(async ({ id, field }) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('groomin-activities', 1)
       request.onsuccess = () => resolve(request.result)
@@ -75,11 +78,11 @@ async function cachedTitle(page: Page, id = '1') {
       return await new Promise<string | null>((resolve, reject) => {
         const tx = db.transaction('activities')
         const request = tx.objectStore('activities').get(id)
-        tx.oncomplete = () => resolve(request.result?.metadata.name ?? null)
+        tx.oncomplete = () => resolve(request.result?.metadata[field] ?? null)
         tx.onabort = () => reject(tx.error)
       })
     } finally { db.close() }
-  }, id)
+  }, { id, field })
 }
 
 async function installProbe(page: Page) {
@@ -125,6 +128,161 @@ async function installProbe(page: Page) {
     }
   })
 }
+
+test('type drafts include new categories, remain independent of titles, and can be discarded', async ({ page }) => {
+  await setup(page)
+  await expect(typeEditor(page)).toHaveValue('')
+  await expect(typeEditor(page).getByRole('option', { name: 'Trail Running', exact: true })).toHaveCount(1)
+  await page.getByRole('button', { name: 'Hiking', exact: true }).click()
+  await page.getByRole('button', { name: 'Cycling', exact: true }).click()
+  await typeEditor(page).selectOption('trail_running')
+  await expect(page.locator('tbody tr')).toHaveCount(1)
+  await expect(page.locator('.type-label')).toHaveText('Running')
+  await expect(saveButton(page)).toHaveText('Save JSON (1)')
+  await title(page, 'other/garmin-2.gpx').fill('A trail run')
+  await expect(saveButton(page)).toHaveText('Save JSON (1)')
+  await typeEditor(page).selectOption('')
+  await expect(saveButton(page)).toHaveText('Save JSON (1)')
+  await title(page, 'other/garmin-2.gpx').press('Escape')
+  await expect(saveButton(page)).toBeDisabled()
+  await typeEditor(page).selectOption('trail_running')
+  await title(page, 'other/garmin-2.gpx').fill('   ')
+  const exported = await save(page) as TitleMappingExport
+  expect(exported.schemaVersion).toBe(3)
+  expect(exported.changes[0]).toMatchObject({ activityType: 'Running', newActivityType: 'trail_running' })
+  expect(exported.changes[0]).not.toHaveProperty('newTitle')
+})
+
+test('exports one combined edit per activity and hidden type-only and title-only edits without requests', async ({ page }) => {
+  const archive = await setup(page)
+  const requests: string[] = []
+  page.on('request', (request) => { if (/^https?:/.test(request.url())) requests.push(request.url()) })
+  await typeEditor(page, 'nested/garmin-1.gpx').selectOption('walking')
+  await title(page).fill('  Ridge walk  ')
+  await typeEditor(page).selectOption('trail_running')
+  await title(page, 'garmin-3.gpx', 'Riverside Ride').fill('River loop')
+  await page.getByRole('checkbox', { name: 'Group similar routes' }).check()
+  await expect(typeEditor(page)).toHaveValue('trail_running')
+  await page.getByRole('searchbox').fill('no matching names')
+  await expect(page.locator('tbody tr')).toHaveCount(0)
+  const typeOnly = change('unused', 'other/garmin-2.gpx')
+  delete typeOnly.newTitle
+  const expected = {
+    ...mapping(archive, [
+      { ...change('Ridge walk'), newActivityType: 'walking' },
+      { ...typeOnly, newActivityType: 'trail_running' },
+      change('River loop', 'garmin-3.gpx', 'Riverside Ride'),
+    ]),
+    schemaVersion: 3,
+  }
+  expect(await save(page)).toEqual(expected)
+  expect(await save(page)).toEqual(expected)
+  expect(requests).toEqual([])
+  await page.getByRole('searchbox').fill('')
+  await expect(typeEditor(page)).toHaveValue('trail_running')
+  await expect(title(page)).toHaveValue('  Ridge walk  ')
+})
+
+test('saved types warm-load as baselines while separate field exports preserve remembered values', async ({ page }) => {
+  const archive = await setup(page)
+  await title(page, 'other/garmin-2.gpx').fill('Saved name')
+  await save(page)
+  await title(page, 'other/garmin-2.gpx').press('Escape')
+  await typeEditor(page).selectOption('trail_running')
+  await save(page)
+  expect(await cachedTitle(page, '2')).toBe('Saved name')
+  expect(await cachedTitle(page, '2', 'type')).toBe('Trail Running')
+  await typeEditor(page).selectOption('')
+  await title(page, 'other/garmin-2.gpx').fill('Final name')
+  const titleOnly = await save(page) as TitleMappingExport
+  expect(titleOnly.schemaVersion).toBe(2)
+  expect(await cachedTitle(page, '2', 'type')).toBe('Trail Running')
+  await page.reload()
+  await selectZip(page, archive)
+  await expectLoaded(page, 3)
+  await expect(typeEditor(page, 'other/garmin-2.gpx', 'Final name')).toHaveValue('')
+  await expect(page.getByRole('button', { name: 'Trail Running', exact: true })).toBeVisible()
+  await expect(saveButton(page)).toBeDisabled()
+  await expect(page.locator('.cache-summary')).toHaveAttribute('data-extracted', '0')
+  await typeEditor(page, 'other/garmin-2.gpx', 'Final name').selectOption('running')
+  const reverted = await save(page) as TitleMappingExport
+  expect(reverted.changes[0]).toMatchObject({ originalTitle: 'Final name', activityType: 'Trail Running', newActivityType: 'running' })
+  await page.getByRole('button', { name: 'Clear activity cache' }).click()
+  await expect(page.locator('.cache-notice')).toContainText('Activity cache cleared')
+  await selectZip(page, archive)
+  await expectLoaded(page, 3)
+  await expect(typeEditor(page)).toHaveValue('')
+  await expect(page.getByRole('button', { name: 'Running', exact: true })).toBeVisible()
+  await expect(title(page, 'other/garmin-2.gpx')).toHaveValue('Green Mountain')
+})
+
+test('type changes during a save are outside its snapshot and cache clearing prevents persistence', async ({ page }) => {
+  await installProbe(page)
+  await setup(page)
+  await typeEditor(page).selectOption('trail_running')
+  await page.evaluate(() => { window.titleExportProbe.holdRead = true })
+  const downloading = page.waitForEvent('download')
+  await saveButton(page).click()
+  await expect.poll(() => page.evaluate(() => Boolean(window.titleExportProbe.releaseRead))).toBe(true)
+  await typeEditor(page).selectOption('walking')
+  await page.getByRole('button', { name: 'Clear activity cache' }).click()
+  await expect(page.locator('.cache-notice')).toContainText('Activity cache cleared')
+  await page.evaluate(() => window.titleExportProbe.releaseRead!())
+  const exported = await readDownload(await downloading) as TitleMappingExport
+  expect(exported.changes[0]?.newActivityType).toBe('trail_running')
+  await expect(page.locator('.export-error')).toContainText('Some exported titles and types could not be remembered')
+  expect(await cachedTitle(page, '2', 'type')).toBeNull()
+  await expect(typeEditor(page)).toHaveValue('walking')
+  await expect(page.locator('.draft-status')).toContainText('not included in the latest JSON export')
+})
+
+test('failed type exports keep drafts and never update remembered metadata', async ({ page }) => {
+  await installProbe(page)
+  await setup(page)
+  await typeEditor(page).selectOption('trail_running')
+  await page.evaluate(() => { window.titleExportProbe.failDownload = true })
+  await saveButton(page).click()
+  await expect(page.locator('.export-error')).toContainText('Synthetic download failure')
+  await expect(typeEditor(page)).toHaveValue('trail_running')
+  expect(await cachedTitle(page, '2', 'type')).toBe('Running')
+  await expect(page.locator('.draft-status')).toContainText('not included in the latest JSON export')
+})
+
+test('unexported type-only changes warn before replacing an archive and cancellation preserves drafts', async ({ page }) => {
+  await setup(page)
+  await typeEditor(page).selectOption('trail_running')
+  const replacement = await zip([['garmin-10.gpx', gpx(track('Replacement', 'hiking', '2025-01-01T00:00:00Z'))]])
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await selectZip(page, replacement)
+  await expect(typeEditor(page)).toHaveValue('trail_running')
+  await save(page)
+  await typeEditor(page).selectOption('walking')
+  page.once('dialog', (dialog) => dialog.accept())
+  await selectZip(page, replacement)
+  await expectLoaded(page, 1)
+  await expect(saveButton(page)).toBeDisabled()
+})
+
+test('type-only proposals retain identity and ambiguity checks and reject invalid targets', () => {
+  const proposed = { ...change('unused'), newActivityType: 'trail_running' }
+  delete proposed.newTitle
+  for (const key of ['', 'unknown', 'Trail Running', 'trail-running', 'trail_running!', 'hiking']) {
+    expect(() => createTitleMappingExport('a'.repeat(64), [{ ...proposed, newActivityType: key }], new Set())).toThrow(/type key/)
+  }
+  expect(() => createTitleMappingExport('a'.repeat(64), [{ ...proposed, newActivityType: undefined }], new Set())).toThrow(/change is required/)
+  expect(() => createTitleMappingExport('a'.repeat(64), [{ ...proposed, activityType: 'Unknown' }], new Set())).toThrow(/known activity type/)
+  expect(() => createTitleMappingExport('a'.repeat(64), [proposed], new Set([proposed.sourceFile]))).toThrow(/Duplicate GPX paths/)
+  expect(() => createTitleMappingExport('a'.repeat(64), [proposed, { ...proposed, sourceFile: 'other/garmin-1.gpx' }], new Set())).toThrow(/same Garmin activity ID/)
+})
+
+test('type-only export matches the shared schema-3 writer fixture', async () => {
+  const changes = pendingTitleChanges([{
+    id: 'row', sourceFile: 'garmin-42.gpx', name: 'Morning run', type: 'Running',
+    date: Date.parse('2025-01-02T00:00:00.000Z'),
+  }], new Map(), new Map([['row', 'trail_running']]))
+  const fixture = JSON.parse(await readFile(new URL('../fixtures/activity-mapping-v3.json', import.meta.url), 'utf8'))
+  expect(createTitleMappingExport('a'.repeat(64), changes, new Set())).toEqual(fixture)
+})
 
 test('starts with prefilled inline titles and ignores blank or unchanged proposals', async ({ page }) => {
   await setup(page)

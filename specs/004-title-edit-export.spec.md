@@ -64,3 +64,11 @@ For this stage, the app runs on localhost. No deployment, Garmin authentication,
 - Save JSON also remembers the captured, trimmed exported titles in the activity-ID cache specified by spec 009, after requesting the download. Only exported changes persist; unsaved drafts and failed exports do not.
 - On the next import, remembered titles are starting titles, not pending edits, and supply JSON `originalTitle` for subsequent renames. Current-session originals, drafts, complete export snapshots, and discard warnings remain unchanged.
 - Preserve previews and comparison caches, with no warm GPX parsing. Report failed title persistence separately from the JSON download; clearing during save must not repopulate the cache. Remembering a title does not confirm a disk save or a Garmin update.
+
+## Activity type editing decisions (2026-09-18)
+
+- Extend the existing per-activity editing flow with an accessible Type selector, including Running and Trail Running even if the archive contains no trail runs. Offer common categories and known categories present in the archive; the local writer verifies the chosen category against Garmin's catalog.
+- Keep title and type drafts independent, attached to row identity, and editable in both ordinary and grouped lists. Show the starting type when changed; selecting it again removes the type proposal. Filtering continues to use starting types so recategorizing a row does not hide it mid-edit.
+- Count changed activities, not changed fields. Export type-only, title-only, and combined proposals, including hidden rows, with the same identity checks, snapshot semantics, and discard warnings. Preserve original metadata and GPX files.
+- Title-only exports retain schema 2. Any export containing a type change uses schema 3 as defined in spec 007; an omitted field means leave that remote field unchanged.
+- Save JSON remembers only exported title/type fields in complete cached records for the next import, as specified in spec 009. No bulk recategorization, Garmin browser requests, or automatic write-back is introduced.

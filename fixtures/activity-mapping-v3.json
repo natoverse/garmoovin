@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 3,
+  "archiveFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "changes": [
+    {
+      "sourceFile": "garmin-42.gpx",
+      "garminActivityId": "42",
+      "recordedStartTime": "2025-01-02T00:00:00.000Z",
+      "activityType": "Running",
+      "originalTitle": "Morning run",
+      "newActivityType": "trail_running"
+    }
+  ]
+}

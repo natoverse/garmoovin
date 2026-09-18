@@ -4,7 +4,7 @@
 
 A personal Garmin activity cleanup companion to Stronger, with two independent units:
 
-- A static GitHub Pages website for browsing local archives, suggesting repeat routes, drafting titles, and downloading a self-contained JSON edit configuration.
+- A static GitHub Pages website for browsing local archives, suggesting repeat routes, drafting titles and activity types, and downloading a self-contained JSON edit configuration.
 - A local Python CLI using `garminconnect` to verify, review, and explicitly apply that JSON. It never needs the original ZIP.
 
 ## GitHub Pages
@@ -39,13 +39,13 @@ Images are generated in the browser and saved as part of the activity cache desc
 
 Groomin uses IndexedDB, not `localStorage`: database **`groomin-activities`**, with **`activities`** and **`pairs`** stores. A `garmin-<positive integer>.gpx` filename supplies the activity ID, retained as a string. Nested folders and case-insensitive filenames are supported. The cache survives reloads and works across overlapping archives; only entries in the ZIP you select appear.
 
-Each complete activity record contains its starting title/type/date, route PNG, elevation profile and statistics, and prepared similarity geometry. The title initially comes from GPX; **Save JSON** replaces the cached title with the exported title for the next load. A warm hit skips GPX extraction, XML parsing, route hashing/projection, and preview/geometry preparation. Previously computed pair distances are also reused; bundles are still assembled for your current filters and tolerance. New IDs are processed normally. The viewer reports how many entries came **from cache** versus were **processed**.
+Each complete activity record contains its starting title/type/date, route PNG, elevation profile and statistics, and prepared similarity geometry. Titles and types initially come from GPX; **Save JSON** updates only the exported fields in the cache for the next load. A warm hit skips GPX extraction, XML parsing, route hashing/projection, and preview/geometry preparation. Previously computed pair distances are also reused; bundles are still assembled for your current filters and tolerance. New IDs are processed normally. The viewer reports how many entries came **from cache** versus were **processed**.
 
-**Clear activity cache** removes all those records and pair scores, including remembered titles, plus both older thumbnail databases. Current activities and title drafts stay on screen, and work already running in that tab cannot refill the cleared cache. Reselect the ZIP to rebuild from its files. Clear after changing titles elsewhere or editing recorded GPX data. Renames exported through Save JSON do not require clearing: their exported titles become the starting titles on reload. Dates, profiles, and geometry intentionally stay unchanged until clearing. There are no source freshness hashes, timestamps, TTLs, or automatic Garmin refreshes.
+**Clear activity cache** removes all those records and pair scores, including remembered titles and types, plus both older thumbnail databases. Current activities and drafts stay on screen, and work already running in that tab cannot refill the cleared cache. Reselect the ZIP to rebuild from its files. Clear after changing metadata elsewhere or editing recorded GPX data. Edits exported through Save JSON do not require clearing: their exported titles/types become the starting values on reload. Dates, profiles, and geometry intentionally stay unchanged until clearing. There are no source freshness hashes, timestamps, TTLs, or automatic Garmin refreshes.
 
 The first import after this feature is cold; old image-only cache entries are not migrated. Ordinary deployments retain a compatible cache; an incompatible cache-format update requires a rebuild. Entries without valid Garmin IDs, or with duplicate IDs within the selected ZIP, remain independently browsable but are not persisted. Missing-route/no-elevation results can be cached; transient failures are retried rather than stored as permanent results. Invalid records are reported and rebuilt, and storage failures fall back to ordinary processing with a warning.
 
-Reload still requires selecting a ZIP. Source files, unsaved title drafts, filters, and final bundles are not saved. The selected ZIP is hashed only when needed for the existing JSON export, not to check the cache. Browser storage can be cleared or become unavailable, and each browser profile/site origin has its own cache.
+Reload still requires selecting a ZIP. Source files, unsaved drafts, filters, and final bundles are not saved. The selected ZIP is hashed only when needed for the existing JSON export, not to check the cache. Browser storage can be cleared or become unavailable, and each browser profile/site origin has its own cache.
 
 ## Elevation profiles
 
@@ -57,7 +57,7 @@ Separate tracks, segments, invalid coordinates, and missing or invalid elevation
 
 Profiles are prepared on cache misses and reused when filtering, grouping, or drafting titles. Their rendered path and statistics are persisted with the activity, so reopening a cached ID does not process its elevations again. Clear the activity cache and reselect the ZIP to read changed elevations. No chart service, terrain lookup, export fields, or Garmin requests are added.
 
-## Title edits and JSON export
+## Title and activity type edits
 
 Every activity has one editable **Title**, prefilled with its imported name or last exported title on a cache hit. Click or tab into it to draft a rename in place. The field looks like title text at rest, with a subtle border on hover and a clear focus ring while editing. There is no separate New title column.
 
@@ -65,13 +65,15 @@ Press Enter or move focus away to finish editing; press Escape to discard that a
 
 Drafts remain attached to their individual activities while filtering, searching, or loading thumbnails. Search and grouping labels continue to use imported names, so editing a title cannot remove its row mid-edit. Imported names remain unchanged internally and supply `originalTitle` in the JSON; editing never rewrites a GPX file.
 
-**Save JSON** shows the total proposal count and downloads `garmin-title-mappings.json`, including changes for hidden rows. Each export is a complete current snapshot, not an incremental patch. Schema version **2** includes the ZIP fingerprint and the identity evidence needed by the separate writer; the exact contract is below. Missing evidence, duplicate GPX paths (including unreadable duplicates), or multiple proposals for one target ID block download with visible per-source reasons, even for hidden rows. Clear affected proposals before saving; no partial file is silently exported. Browsing and drafting still work for activities that cannot be exported.
+Use the selector in each **Type** cell to recategorize an activity, for example **Running → Trail Running**. Trail Running is available even if none of your imported activities already use it. The selector offers common Garmin categories plus known types in the current archive; the CLI checks the selected category against Garmin's current catalog before offering a write. The badge shows the starting type. Choose **Keep [starting type]** to discard just the type draft. Titles and types can be changed independently or together, in ordinary or grouped lists. Type filters use starting types so a row does not disappear while you edit it.
+
+**Save JSON** counts changed activities (a title and type change on one row count once) and downloads `garmin-title-mappings.json`, including changes for hidden rows. Each export is a complete current snapshot, not an incremental patch. Title-only exports retain schema **2**; snapshots with any type changes use schema **3**. Both include the ZIP fingerprint and identity evidence needed by the separate writer; the exact contracts are below. Missing evidence, duplicate GPX paths (including unreadable duplicates), or multiple proposals for one target ID block download with visible per-source reasons, even for hidden rows. Clear affected proposals before saving; no partial file is silently exported. Browsing and drafting still work for activities that cannot be exported.
 
 Export becomes available when import finishes. The ZIP fingerprint is computed on the first export and reused for that selected file. You can keep editing while JSON is prepared; those later edits are not silently included in an already requested snapshot. The browser handles the download location and filename, and the app cannot verify that you completed saving it to disk. No GPX files or Garmin activities are changed.
 
-Once the JSON download is requested, its exported titles are remembered by activity ID. On the next load they are starting titles, not pending edits. Only the captured, trimmed export is remembered, including hidden rows; later unsaved edits are not. Current rows and drafts remain unchanged so repeated saves still produce complete snapshots. This assumes you apply the JSON with the CLI; it does not confirm a disk save or a successful Garmin update. If an activity has no complete cache record or storage fails, the JSON still downloads with a visible warning that titles could not all be remembered.
+Once the JSON download is requested, its exported titles and types are remembered by activity ID. On the next load they are starting values, not pending edits. Only explicitly exported fields are updated: a type-only change does not overwrite a previously remembered title, or vice versa. Only the captured, trimmed export is remembered, including hidden rows; later unsaved edits are not. Current rows and drafts remain unchanged so repeated saves still produce complete snapshots. This assumes you apply the JSON with the CLI; it does not confirm a disk save or a successful Garmin update. If an activity has no complete cache record or storage fails, the JSON still downloads with a visible persistence warning.
 
-Replacing an archive asks before discarding proposals that differ from the latest export; browser navigation warns where supported. Save before leaving rather than relying on navigation warnings, especially on mobile. Browser downloads are separate files: restoring an imported title does not rewrite an earlier export or undo a previously remembered title.
+Replacing an archive asks before discarding proposals that differ from the latest export; browser navigation warns where supported. Save before leaving rather than relying on navigation warnings, especially on mobile. Browser downloads are separate files: restoring a starting title or type does not rewrite an earlier export or undo previously remembered metadata.
 
 ### JSON handoff: schema version 2
 
@@ -90,6 +92,17 @@ The date is the earliest valid trackpoint timestamp, falling back to GPX metadat
 
 Both units enforce a 1 MiB UTF-8 JSON limit. The writer rejects unknown or duplicate JSON fields, invalid or missing identity, repeated source paths/target IDs, and unsupported schema versions before connecting. Version 1 exports lack the required evidence and must be re-exported; the CLI never fills gaps by guessing or requesting the ZIP. `fixtures/title-mapping-v2.json` is a synthetic contract fixture shared by browser and CLI tests.
 
+### JSON handoff: schema version 3
+
+Schema **3** retains the top-level structure and all schema-2 identity fields, including `activityType` as the **starting** type and `originalTitle` as the starting title. Each change has at least one of:
+
+| Field | Value |
+| --- | --- |
+| `newTitle` | Optional trimmed, nonempty proposed title, different from `originalTitle` |
+| `newActivityType` | Optional canonical Garmin type key, such as `trail_running`, matching `[a-z][a-z0-9_]*`, not `unknown`, different from the normalized starting type |
+
+Omit unchanged fields rather than writing null. A type-only proposal omits `newTitle` and never renames the remote activity. A title-only entry in a mixed snapshot omits `newActivityType`. The CLI resolves type keys to Garmin's numerical type and parent IDs during review; exports contain no guessed type IDs. Existing schema-2 files and title-only recovery journals remain supported. Older writers reject schema 3; update this checkout before applying type edits. `fixtures/activity-mapping-v3.json` is the shared synthetic type-only fixture.
+
 ## Local Garmin CLI
 
 Use Python 3.13 on macOS or Linux from this checkout. These commands install and run the **writer only**; no web server is needed:
@@ -102,15 +115,15 @@ python3.13 -m venv .venv
 .venv/bin/python -m garmin_writer apply ~/Downloads/garmin-title-mappings.json
 ```
 
-`login` prompts in the terminal for your email, password, and MFA code when required. It saves a private reusable session and changes no activities. `review` loads that session and performs only reads. `apply` performs a fresh review, prints the account and every original/current/proposed title, source identity, blocking reason, and eligible count, then requires typing **APPLY** in an interactive terminal. Blank lines and unrecognized responses keep the confirmation prompt open without authorizing writes; type **CANCEL** or press Ctrl+C to exit. There is no unattended `--yes` option. Changing the file after review cannot change that invocation's immutable batch.
+`login` prompts in the terminal for your email, password, and MFA code when required. It saves a private reusable session and changes no activities. `review` loads that session and performs only reads. `apply` performs a fresh review, prints the account and original/current/proposed titles and types, source identity, blocking reason, and eligible count, then requires typing **APPLY** in an interactive terminal. Blank lines and unrecognized responses keep the confirmation prompt open without authorizing writes; type **CANCEL** or press Ctrl+C to exit. There is no unattended `--yes` option. Changing the file after review cannot change that invocation's immutable batch.
 
 `GARMINTOKENS` is a CLI-only **token-directory path**, not token JSON or a permanent bearer token. It defaults to `~/.groomin/tokens`. The library restores and refreshes saved sessions; expired authentication requires `login` again, never an automatic write retry. `GROOMIN_JOURNAL_DIR` defaults to `~/.groomin/journal`. Use separate dedicated directories outside this repository, owned by you, with no symlinked ancestry. Directories use mode 0700 and token/journal files use 0600. Process locks prevent overlapping writers or logins sharing these token/journal directories.
 
 **Existing installations:** the former `~/.garmin-view` storage and `GARMIN_VIEW_JOURNAL_DIR` setting remain recognized, with a warning, so a rename cannot silently abandon credentials or an unresolved journal. If both storage roots exist or environment settings conflict, select the existing token/journal directories explicitly before continuing. Nothing is moved or deleted automatically. Rename these directories only while no writer or login is running, preserving the entire journal history.
 
-For each proposal, the exact ID must appear in the authenticated account's activity listing and match the returned details, known type, and start time within **60 seconds**. The listing uses the UTC source day plus/minus one day to cover Garmin's local-date filtering; it never chooses a nearest match. Type checks ignore case and space/hyphen/underscore formatting, not meaning. The review's `changedSinceExport` flag highlights remote names that differ from the imported title.
+For each proposal, the exact ID must appear in the authenticated account's activity listing and match the returned details, known type, and start time within **60 seconds**. The listing uses the UTC source day plus/minus one day to cover Garmin's local-date filtering; it never chooses a nearest match. Type checks ignore case and space/hyphen/underscore formatting, not meaning. A type-edit proposal may also match its proposed type so already-applied edits can be safely recognized; unrelated remote types are blocked. The review's `changedSinceExport` flag highlights remote names that differ from the imported title.
 
-Immediately before each write, the CLI rechecks the account, identity, and current title. A changed title becomes a conflict requiring a fresh review; an already-matching title is skipped. It changes only the activity name. The journal is atomically saved and flushed before a batch and before each mutation; successful read-back is required for **confirmed**. Results distinguish confirmed, already applied, blocked, conflict, failed, not attempted, and uncertain outcomes. A timeout or interrupted response is not proof of success or failure.
+Immediately before each write, the CLI rechecks the account, identity, and reviewed state. Conflicts require a fresh review; fields already at their requested values are skipped. Only explicitly requested titles/types are changed. Combined changes require separate Garmin writes, so partial completion is possible: recovery re-reads both fields and offers only the remaining work for a new confirmation. The journal is atomically saved and flushed before a batch and before each mutation; successful read-back of every requested field is required for **confirmed**. Results distinguish confirmed, already applied, blocked, conflict, failed, not attempted, and uncertain outcomes. A timeout or interrupted response is not proof of success or failure.
 
 Authentication failure, rate limiting, or uncertainty pauses remaining writes. Recovery is a separate read-only action:
 
@@ -149,9 +162,9 @@ Archive contents are processed in browser memory. The website has no login, acti
 
 The supplied warm cream/rust theme uses **Bagel Fat One**, **Hanken Grotesk**, and **Space Mono** from the Google Fonts CDN (`fonts.googleapis.com` and `fonts.gstatic.com`). These are public typography requests, not activity-data requests; Google receives normal connection metadata such as your IP address. The page sets a no-referrer policy, and readable local fallback fonts keep the viewer usable if the CDN is blocked or unavailable. No filenames, titles, routes, or exports are included in font requests.
 
-The GitHub Pages client holds no Garmin credentials and makes no automatic Garmin requests. Activating **View on Garmin Connect** opens Garmin's website with the activity ID in the URL, without a referrer or access to the Groomin tab; no GPX contents or draft titles are sent. Garmin handles login on its own site. Only the explicitly invoked local writer uses the Garmin API for authentication, activity reads, and title updates. Neither unit uploads GPX archives or route coordinates.
+The GitHub Pages client holds no Garmin credentials and makes no automatic Garmin requests. Activating **View on Garmin Connect** opens Garmin's website with the activity ID in the URL, without a referrer or access to the Groomin tab; no GPX contents or drafts are sent. Garmin handles login on its own site. Only the explicitly invoked local writer uses the Garmin API for authentication, activity reads, and title/type updates. Neither unit uploads GPX archives or route coordinates.
 
-The IndexedDB activity cache persists Garmin activity IDs, starting titles/types/dates, route PNGs, elevation profiles/statistics, prepared spatial geometry, and computed pair distances. Save JSON updates cached titles to the exported names. Images and derived geometry can reveal sensitive locations. The original ZIP/GPX, full source paths, raw coordinate/elevation arrays, unsaved title drafts, and final groups are not stored. Filename-based name fallbacks can appear in cached display names. Clear the activity cache when you no longer want this information on the device.
+The IndexedDB activity cache persists Garmin activity IDs, starting titles/types/dates, route PNGs, elevation profiles/statistics, prepared spatial geometry, and computed pair distances. Save JSON updates exported titles/types in this cache. Images and derived geometry can reveal sensitive locations. The original ZIP/GPX, full source paths, raw coordinate/elevation arrays, unsaved drafts, and final groups are not stored. Filename-based name fallbacks can appear in cached display names. Clear the activity cache when you no longer want this information on the device.
 
 **Clear activity cache** clears `groomin-activities` and removes `groomin-thumbnails` and `garmin-view-thumbnails` on the same origin; close other viewer tabs if cleanup is blocked. Old database names are retained only for cleanup compatibility.
 
@@ -163,7 +176,7 @@ Downloaded JSON and CLI journals contain private activity IDs, dates, paths, and
 
 The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright at the actual `/groomin/` base path. The **Check** workflow builds/type-checks the website and runs browser and Python unittest coverage. The separate **Deploy Pages** workflow publishes only `dist` from `main`, never Python code, credentials, journals, test data, or source archives.
 
-See `MANIFESTO.md` for the product direction and specs 001–008 for the implemented scope. Spec 005 owns the standalone writer; spec 007 owns the static deployment and schema-v2 boundary; spec 008 adds per-activity elevation profiles.
+See `MANIFESTO.md` for the product direction and specs 001–009 for the implemented scope. Spec 004 covers title/type editing, spec 005 owns the standalone writer, spec 007 owns static deployment and the versioned JSON boundary, spec 008 adds elevation profiles, and spec 009 covers caching.
 
 ## Supplied visual design
 
