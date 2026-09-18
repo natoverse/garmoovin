@@ -16,10 +16,10 @@ export const SIMILARITY_LIMITS = {
   lengthMetres: 500_000,
   activities: 5_000,
   preparationWork: 8_000_000,
-  groupingWork: 40_000_000,
+  groupingWork: 4_000_000_000,
   cachedDescriptors: 64,
   cachedDescriptorBytes: 16 * 1024 * 1024,
-  cachedPairs: 10_000,
+  cachedPairs: 150_000,
   retainedDescriptors: 5_000,
   retainedDescriptorBytes: 64 * 1024 * 1024,
 } as const

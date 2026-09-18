@@ -78,3 +78,8 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 - Request the JSON download first. If export validation, hashing, or requesting the download fails, do not update cached titles. A cache write failure must not misreport the already-requested download as failed. Capture the cache generation at click time so clearing also invalidates pending title writes.
 - Within the current import, keep originals and drafts stable for repeat exports and unsaved-change warnings. On the next import, the last exported title becomes the baseline for editing, search, bundle labels, accessible labels, and JSON `originalTitle`; it is not another pending proposal.
 - Remembered titles assume the user applies the downloaded JSON with the CLI. They do not verify a disk save, remote Garmin state, or a completed rename. Titles changed elsewhere still require clearing/reimporting. Clearing also removes remembered titles and restores GPX names on the next import.
+
+## Larger cold-analysis iteration (2026-09-18)
+
+- Spec 006 raises grouping work capacity 100× and retains up to 150,000 pair scores in memory. This accommodates all 136,503 possible comparisons among 523 activities without eviction forcing recalculation; the persistent pair store and cache-format version are unchanged.
+- Keep on-demand comparisons and bounded cache writes. Only completed scores are reusable; new activities or newly encountered pairs still incur first-time work. Preparation, geometry-memory limits, and cancellation remain unchanged.

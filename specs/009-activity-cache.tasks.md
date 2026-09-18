@@ -17,3 +17,10 @@ The spec and implementation plan were approved for implementation after PR #13 m
 - [x] Update related specs, cache help, privacy copy, and README for next-load title baselines.
 - [x] Cover saved-title reloads, snapshots, hidden edits, export/storage failures, and clearing during save.
 - [ ] Merge the follow-up only after PR review.
+
+## Cold-analysis capacity follow-up
+
+- [x] Raise grouping work and bounded pair-score capacity while preserving geometry limits and compatible caches.
+- [x] Add a 523-ID regression exceeding the previous work budget and checking complete pair reuse after regrouping/restoration.
+- [x] Record the computation-limit rationale in the similarity/cache specs and README.
+- [x] Run the cold/warm regression and existing browser coverage.
