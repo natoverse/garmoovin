@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { SimilarityActivity, SimilarityGroup, SimilaritySession } from './similarity'
+import type { SimilarityActivity, SimilarityGroup, SimilarityMode, SimilaritySession } from './similarity'
 
 interface AnalysisResult {
   session: SimilaritySession
   signature: string
   tolerance: number
+  mode: SimilarityMode
   groups: SimilarityGroup[]
 }
 
@@ -13,6 +14,7 @@ export function useSimilarity(
   activities: readonly SimilarityActivity[],
   enabled: boolean,
   tolerance: number,
+  mode: SimilarityMode,
 ) {
   const [result, setResult] = useState<AnalysisResult | null>(null)
   // Only membership/geometry changes restart work, not thumbnails or title drafts.
@@ -28,9 +30,9 @@ export function useSimilarity(
     }
     const controller = new AbortController()
     const snapshot = activities
-    void session.group(snapshot, tolerance, controller.signal).then(
+    void session.group(snapshot, tolerance, controller.signal, mode).then(
       (groups) => {
-        if (!controller.signal.aborted) setResult({ session, signature, tolerance, groups })
+        if (!controller.signal.aborted) setResult({ session, signature, tolerance, mode, groups })
       },
       (error: unknown) => {
         if (controller.signal.aborted) return
@@ -40,14 +42,14 @@ export function useSimilarity(
           status: geometry.status === 'ready' ? 'error' : geometry.status,
           message: geometry.status === 'error' ? geometry.message : message,
         }))
-        setResult({ session, signature, tolerance, groups })
+        setResult({ session, signature, tolerance, mode, groups })
       },
     )
     return () => controller.abort()
-  }, [session, signature, enabled, tolerance])
+  }, [session, signature, enabled, tolerance, mode])
 
   const current = enabled && result !== null && result.session === session &&
-    result.signature === signature && result.tolerance === tolerance ? result : null
+    result.signature === signature && result.tolerance === tolerance && result.mode === mode ? result : null
   const groups: SimilarityGroup[] = !enabled ? [] : current?.groups ?? activities.map(({ id, geometry }) => ({
     members: [id],
     status: geometry.status === 'ready' ? 'pending' : geometry.status,

@@ -358,16 +358,16 @@ test('persisted distances work at different tolerances without turning a loose m
   await page.reload()
   await selectZip(page, archive)
   await expectLoaded(page, 2)
-  await page.getByRole('slider').fill('10')
+  await page.getByRole('slider').fill('25')
   await group(page)
   await expect(page.locator('.route-bundle')).toHaveCount(0)
-  await page.getByRole('slider').fill('40')
+  await page.getByRole('slider').fill('150')
   await expect(page.locator('.similarity-count')).not.toContainText('Analysis pending')
   await expect(page.locator('.route-bundle')).toHaveCount(1)
   await expect(page.locator('.cache-summary')).toHaveAttribute('data-compared', '0')
 })
 
-for (const invalid of ['profile', 'geometry', 'version', 'pair']) {
+for (const invalid of ['profile', 'geometry', 'version', 'pair', 'area-pair']) {
   test(`invalid cached ${invalid} is reported and rebuilt rather than hiding activities`, async ({ page }) => {
     await page.goto('./')
     const archive = await zip([['garmin-1.gpx', recording(0)], ['garmin-2.gpx', recording(1)]])
@@ -379,10 +379,10 @@ for (const invalid of ['profile', 'geometry', 'version', 'pair']) {
         const request = indexedDB.open('groomin-activities', 1)
         request.onsuccess = () => resolve(request.result)
       })
-      const store = invalid === 'pair' ? 'pairs' : 'activities'
-      const key = invalid === 'pair' ? ['1', '2'] : '1'
+      const store = invalid.endsWith('pair') ? 'pairs' : 'activities'
+      const key = invalid.endsWith('pair') ? ['1', '2'] : '1'
       const record = await new Promise<{
-        elevation: unknown; geometry: { descriptor: { version: string }; tree: unknown }; score: unknown
+        elevation: unknown; geometry: { descriptor: { version: string }; tree: unknown }; score: unknown; areaD70: unknown
       }>((resolve) => {
         const request = db.transaction(store).objectStore(store).get(key)
         request.onsuccess = () => resolve(request.result)
@@ -391,6 +391,7 @@ for (const invalid of ['profile', 'geometry', 'version', 'pair']) {
       if (invalid === 'geometry') record.geometry.tree = { bounds: [0, 0, 0, 0, 0, 0], left: null, right: null }
       if (invalid === 'version') record.geometry.descriptor.version = 'incompatible'
       if (invalid === 'pair') record.score = 'not a distance'
+      if (invalid === 'area-pair') record.areaD70 = -1
       await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(store, 'readwrite')
         tx.objectStore(store).put(record, key)
@@ -405,7 +406,7 @@ for (const invalid of ['profile', 'geometry', 'version', 'pair']) {
     await group(page)
     await expect(page.locator('.route-bundle')).toHaveCount(1)
     await expect(page.locator('.cache-warning')).toContainText('could not be read')
-    if (invalid === 'pair') {
+    if (invalid.endsWith('pair')) {
       await expect(page.locator('.cache-summary')).toHaveAttribute('data-compared', '1')
     } else {
       await expect(page.locator('.cache-summary')).toHaveText('1 from cache · 1 processed')
