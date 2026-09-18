@@ -1,5 +1,5 @@
 import type { Coordinate, Route } from './route'
-import type { ElevationTracks } from './elevation'
+import { horizontalDistance, type ElevationTracks } from './elevation'
 
 export interface Activity {
   id: string
@@ -8,6 +8,7 @@ export interface Activity {
   type: string
   date: number | null
   durationMs: number | null
+  distanceMeters: number | null
 }
 
 function children(element: Element, name: string): Element[] {
@@ -90,6 +91,7 @@ export function parseGpx(xml: string, sourceFile: string, id: string): { activit
   let earliest: number | null = null
   let latest: number | null = null
   let timestampCount = 0
+  let distanceMeters: number | null = null
   const route: Route = []
   const elevationTracks: ElevationTracks = []
   for (const track of tracks) {
@@ -114,6 +116,7 @@ export function parseGpx(xml: string, sourceFile: string, id: string): { activit
           finishSegment()
         } else {
           const previous = coordinates.at(-1)
+          if (previous) distanceMeters = (distanceMeters ?? 0) + horizontalDistance(previous, position)
           if (!previous || previous[0] !== position[0] || previous[1] !== position[1]) coordinates.push(position)
         }
       }
@@ -128,6 +131,7 @@ export function parseGpx(xml: string, sourceFile: string, id: string): { activit
       type,
       date: earliest ?? timestamp(text(metadata, 'time') || text(root, 'time')),
       durationMs: timestampCount >= 2 && earliest !== null && latest !== null ? latest - earliest : null,
+      distanceMeters,
     },
     route,
     elevation: elevationTracks,

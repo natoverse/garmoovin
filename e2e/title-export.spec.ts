@@ -538,7 +538,7 @@ test('type-only proposals retain identity and ambiguity checks and reject invali
 test('type-only export matches the shared schema-3 writer fixture', async () => {
   const changes = pendingTitleChanges([{
     id: 'row', sourceFile: 'garmin-42.gpx', name: 'Morning run', type: 'Running',
-    date: Date.parse('2025-01-02T00:00:00.000Z'), durationMs: null,
+    date: Date.parse('2025-01-02T00:00:00.000Z'), durationMs: null, distanceMeters: null,
   }], new Map(), new Map([['row', 'trail_running']]))
   const fixture = JSON.parse(await readFile(new URL('../fixtures/activity-mapping-v3.json', import.meta.url), 'utf8'))
   expect(createTitleMappingExport('a'.repeat(64), changes, new Set())).toEqual(fixture)

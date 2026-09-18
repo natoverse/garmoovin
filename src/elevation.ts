@@ -21,7 +21,7 @@ export type ElevationProfile =
 
 export const ELEVATION_FRAME = { width: 180, height: 64, padding: 3 } as const
 
-function horizontalDistance(a: Coordinate, b: Coordinate): number {
+export function horizontalDistance(a: Coordinate, b: Coordinate): number {
   const radians = Math.PI / 180
   const latitude = (b[1] - a[1]) * radians
   const longitude = (((b[0] - a[0] + 180) % 360 + 360) % 360 - 180) * radians

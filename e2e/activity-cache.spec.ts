@@ -132,7 +132,8 @@ test('overlapping archives restore only selected IDs and process only ten additi
 })
 
 for (const changeType of [false, true]) {
-test(`backfills legacy durations once without losing saved titles${changeType ? ' and types' : ''}, previews, or pair scores`, async ({ page }) => {
+for (const missingFields of [['durationMs'], ['distanceMeters'], ['durationMs', 'distanceMeters']]) {
+test(`backfills legacy ${missingFields.join('/')} once without losing saved titles${changeType ? ' and types' : ''}, previews, or pair scores`, async ({ page }) => {
   await probe(page)
   await page.goto('./')
   const archive = await zip([
@@ -144,6 +145,8 @@ test(`backfills legacy durations once without losing saved titles${changeType ? 
   await expectLoaded(page, 3)
   const first = page.locator('tbody tr').filter({ has: page.locator('.activity-name[title="garmin-1.gpx"]') })
   await expect(first.locator('.activity-duration')).toContainText('01:02')
+  const average = await first.locator('.activity-average').textContent()
+  expect(average).not.toContain('Unknown')
   await group(page)
   await page.locator('.activity-name[title="garmin-1.gpx"]').fill('Remembered title')
   if (changeType) {
@@ -157,7 +160,7 @@ test(`backfills legacy durations once without losing saved titles${changeType ? 
   await expect(page.locator('.export-notice')).toContainText(changeType
     ? 'Exported titles and types will be the starting titles and types on your next load.'
     : 'Exported titles will be the starting titles on your next load.')
-  await page.evaluate(async () => {
+  await page.evaluate(async (missingFields) => {
     const db = await new Promise<IDBDatabase>((resolve) => {
       const request = indexedDB.open('groomin-activities', 1)
       request.onsuccess = () => resolve(request.result)
@@ -170,7 +173,7 @@ test(`backfills legacy durations once without losing saved titles${changeType ? 
           const request = store.get(id)
           request.onsuccess = () => {
             const record = request.result
-            delete record.metadata.durationMs
+            for (const field of missingFields) delete record.metadata[field]
             store.put(record, id)
           }
         }
@@ -178,7 +181,7 @@ test(`backfills legacy durations once without losing saved titles${changeType ? 
         tx.onabort = () => reject(tx.error)
       })
     } finally { db.close() }
-  })
+  }, missingFields)
   await page.reload()
   await selectZip(page, archive)
   await expectLoaded(page, 3)
@@ -187,7 +190,9 @@ test(`backfills legacy durations once without losing saved titles${changeType ? 
   await expect(first.locator('.activity-name')).toHaveValue('Remembered title')
   await expect(first.locator('.activity-type option:checked')).toHaveText(changeType ? 'Trail Running' : 'Hiking')
   await expect(first.locator('.activity-duration')).toContainText('01:02')
-  expect(await page.evaluate(() => window.cacheProbe)).toEqual({ parses: 2, hashes: 0, renders: 0, trigonometry: 0 })
+  await expect(first.locator('.activity-average')).toHaveText(average!)
+  expect(await page.evaluate(() => window.cacheProbe)).toMatchObject({ parses: 2, hashes: 0, renders: 0 })
+  expect((await page.evaluate(() => window.cacheProbe)).trigonometry).toBeGreaterThan(0)
   await group(page)
   await expect(page.locator('.cache-summary')).toHaveAttribute('data-compared', '0')
   expect(await storedKeys(page, 'pairs')).toHaveLength(1)
@@ -198,6 +203,7 @@ test(`backfills legacy durations once without losing saved titles${changeType ? 
   await expect(first.locator('.activity-name')).toHaveValue('Remembered title')
   await expect(first.locator('.activity-type option:checked')).toHaveText(changeType ? 'Trail Running' : 'Hiking')
   await expect(first.locator('.activity-duration')).toContainText('01:02')
+  await expect(first.locator('.activity-average')).toHaveText(average!)
   await expect(page.locator('.activity-duration')).toHaveText([
     'Elapsed duration (hours:minutes): 00:00',
     'Elapsed duration (hours:minutes): 01:02',
@@ -205,6 +211,7 @@ test(`backfills legacy durations once without losing saved titles${changeType ? 
   ])
   expect(await page.evaluate(() => window.cacheProbe)).toEqual({ parses: 0, hashes: 0, renders: 0, trigonometry: 0 })
 })
+}
 }
 
 test('same-ID changes stay cached until manual clearing, including metadata, profiles and comparison results', async ({ page }) => {

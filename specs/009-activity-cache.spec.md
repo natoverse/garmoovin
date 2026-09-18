@@ -107,3 +107,9 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 
 - The app is now `garmoovin'` at `/garmoovin/`, but `groomin-activities` remains its stable IndexedDB key. Changing only the project path on the same origin must not discard remembered titles/types, previews, geometry, or pair scores. There is no cache migration or version bump for branding.
 - Keep legacy thumbnail database names in the clear action so the rename cannot strand sensitive cached previews. These names are compatibility identifiers, not visible branding.
+
+## Average pace and speed iteration (2026-09-18)
+
+- Store recorded horizontal `distanceMeters` (or `null` without any valid coordinate pair) alongside duration, independently of elevation availability. Zero is valid for stationary recordings.
+- Retain database version 1 and backfill absent distance/duration fields together from the selected GPX. Preserve already cached values, remembered titles/types/dates, previews, geometry, and pair scores. Backfilled entries count as processed; subsequent imports, including unavailable results, are parse-free cache hits.
+- Compute display averages from cached distance/duration and the current displayed type; do not persist rounded pace/speed or add fields to JSON exports.

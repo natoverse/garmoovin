@@ -1,4 +1,5 @@
 export const METERS_PER_FOOT = 0.3048
+const METERS_PER_MILE = 1609.344
 
 function formatValue(value: number, precise = false): string {
   if (precise) return value.toString()
@@ -15,5 +16,17 @@ export function formatFeet(meters: number, precise = false): string {
 }
 
 export function formatMiles(meters: number): string {
-  return formatValue(meters / 1609.344)
+  return formatValue(meters / METERS_PER_MILE)
+}
+
+export function formatActivityAverage(
+  distanceMeters: number | null, durationMs: number | null, metric: 'pace' | 'speed',
+): string {
+  if (distanceMeters === null || durationMs === null || !Number.isFinite(distanceMeters) ||
+    !Number.isFinite(durationMs) || distanceMeters <= 0 || durationMs <= 0) return 'Unknown'
+  const secondsPerMile = durationMs / 1000 / (distanceMeters / METERS_PER_MILE)
+  const value = metric === 'pace' ? Math.round(secondsPerMile) : 3600 / secondsPerMile
+  if (!Number.isFinite(value) || value <= 0) return 'Unknown'
+  if (metric === 'speed') return `${value.toFixed(1)} mph`
+  return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')} /mi`
 }

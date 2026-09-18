@@ -3,7 +3,7 @@ import { importArchive, type ImportedActivity, type ImportProgress } from './arc
 import { formatDate, formatDuration } from './gpx'
 import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
-import ElevationPreview, { ElevationStats } from './ElevationPreview'
+import ElevationPreview, { ActivityStats } from './ElevationPreview'
 import { ROUTE_TOLERANCE_FEET, SimilaritySession, type SimilarityGroup, type SimilarityMode } from './similarity'
 import { ActivityCache } from './activity-cache'
 import { candidateActivityId, createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
@@ -264,7 +264,7 @@ export default function App() {
     return (
       <div className="table-container" role="region" aria-label={label} tabIndex={0}>
         <table>
-          <caption className="visually-hidden">{label}. Activities with north-up route previews, newest first. Elevation profiles use independent distance and elevation scales. Dates are in UTC. Elapsed durations are in hours and minutes.</caption>
+          <caption className="visually-hidden">{label}. Activities with north-up route previews, newest first. Elevation profiles use independent distance and elevation scales. Dates are in UTC. Elapsed durations are in hours and minutes. Average pace and speed use elapsed time, including pauses.</caption>
           <thead><tr><th scope="col">Select</th><th scope="col" className="route-cell">Route</th><th scope="col" className="elevation-cell">Elevation</th><th scope="col" className="name-heading">Title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
           <tbody>
             {list.map((activity) => {
@@ -325,7 +325,8 @@ export default function App() {
                       ) : 'Garmin Connect link unavailable — no activity ID'}
                     </p>
                     {(exportErrors.has(activity.sourceFile) || duplicateSourceFiles.has(activity.sourceFile)) && <p className="field-error" id={`identity-error-${activity.id}`}>{exportErrors.get(activity.sourceFile) ?? `Duplicate GPX path: ${activity.sourceFile}. Renames for this path cannot be exported.`}</p>}
-                    <ElevationStats profile={activity.elevation} />
+                    <ActivityStats profile={activity.elevation} type={typeDraft ?? activity.type}
+                      durationMs={activity.durationMs} distanceMeters={activity.distanceMeters} />
                     {group && group.status !== 'matched' && <p className="similarity-status">{groupLabel(group)}</p>}
                   </td>
                   <td>

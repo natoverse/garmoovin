@@ -67,3 +67,11 @@ This is the first step toward the route-first gallery described in `MANIFESTO.md
 - Format total hours and minutes as `hh:mm`, truncating leftover seconds, padding both fields to at least two digits, and retaining hours beyond 24.
 - Persist duration with activity metadata. Backfill older records on their next selected import without discarding remembered titles or prepared previews/geometry (see spec 009). Sorting and JSON exports remain unchanged.
 - Correct the shared timestamp validator's timezone capture indices so offsets beyond ±14:00 are rejected for both activity dates and durations.
+
+## Average pace and speed iteration (2026-09-18)
+
+- Add **Avg pace** in `m:ss /mi` for running, walking, hiking, and their recognized foot-based variants, or **Avg speed** in `mph` for cycling variants, beneath the title alongside existing statistics in ordinary and grouped lists. Use the displayed draft type so recategorizing an activity updates its units; unsupported or unknown types have no pace/speed row.
+- Divide recorded horizontal distance by the full elapsed trackpoint duration, including pauses and gaps, not moving time or the rounded hours/minutes display. These GPX-derived averages may differ from Garmin's moving averages.
+- Reuse the elevation profile's spherical distance calculation on consecutive valid coordinates within each segment. Never bridge tracks, segments, or invalid-coordinate gaps. Distance must remain available without elevation data or a drawable preview.
+- Round pace to the nearest whole second per mile and speed to one decimal place. Display **Unknown** for missing or nonpositive distance/duration, never `NaN` or infinity. Missing elevation alone does not prevent an average.
+- Persist distance in meters as activity metadata and backfill legacy records without losing saved titles/types (spec 009). Preserve filtering, sorting, route grouping, source GPX, and JSON export contracts.
