@@ -215,7 +215,7 @@ class Writer:
             self._account(self.review.account)
             batch = self.review.model_copy(deep=True)
             if not any(item.status == "eligible" for item in batch.items):
-                raise WriterError("There are no eligible changes to confirm.")
+                raise WriterError("There are no eligible changes to apply.")
             self.review = None
             batch.phase = "running"
             for item in batch.items:
@@ -353,7 +353,7 @@ class Writer:
                         else:
                             setattr(old, status, getattr(refreshed, status))
                     old.status = "conflict" if completed_conflict else ("already_applied" if all_applied(old) else "not_attempted")
-                    old.reason = "Reconciled by reading Garmin. Any remaining change requires a new confirmation."
+                    old.reason = "Reconciled by reading Garmin. Use reconcile --apply to execute remaining eligible changes."
                 else:
                     # Retain last-known evidence, but leave current values absent:
                     # no failed or paused read constitutes a fresh authorization.
@@ -362,13 +362,13 @@ class Writer:
                     refreshed.resolvedActivityType = old.resolvedActivityType
                     if "uncertain" in (old.status, old.titleStatus, old.activityTypeStatus):
                         unresolved = True
-                        refreshed.reason = "The prior write is still uncertain. Reconciliation must succeed before confirming."
+                        refreshed.reason = "The prior write is still uncertain. Reconciliation must succeed before applying."
                         refreshed.status = "blocked"
             previous.phase = "recovery" if unresolved else "complete"
             previous.notice = "Reconciliation performed no writes."
             self._publish(previous)
             if unresolved:
-                raise WriterError("Some prior writes could not be reconciled. No new confirmation is available.")
+                raise WriterError("Some prior writes could not be reconciled. No further writes are allowed.")
             self.review = review.model_copy(deep=True)
             return review
         finally:

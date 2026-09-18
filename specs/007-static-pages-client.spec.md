@@ -30,7 +30,7 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 ## Notes
 
 - The next export version supersedes spec 004’s version 1 handoff where needed. Preserve `archiveFingerprint`, `sourceFile`, and original/proposed titles while adding the required Garmin ID evidence, recorded start time, and activity type; document exact field names and nullability with the implementation.
-- Garmin ID evidence is a candidate identity claim, not authorization to write. The standalone writer must independently verify it against remote identity data, present the proposed changes for review, require explicit confirmation, journal the operation, write only the title, and read the title back.
+- Garmin ID evidence is a candidate identity claim, not authorization to write. The standalone writer must independently verify it against remote identity data, present the proposed changes for review, require an explicit apply command, journal the operation, write only requested fields, and read them back.
 - This separation supports the manifesto’s privacy and trustworthy-write-back principles: hosting serves code only, while sensitive Garmin access remains an explicit local operation.
 
 ## Implementation decisions
