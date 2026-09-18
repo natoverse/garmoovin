@@ -32,8 +32,8 @@ function timestamp(value: string): number | null {
   if (
     month < 1 || month > 12 || day < 1 || day > days[month - 1]! ||
     Number(match[4]) > 23 || Number(match[5]) > 59 || Number(match[6]) > 59 ||
-    (match[9] !== undefined && (Number(match[9]) > 14 || Number(match[10]) > 59 ||
-      (Number(match[9]) === 14 && Number(match[10]) !== 0)))
+    (match[8] !== undefined && (Number(match[8]) > 14 || Number(match[9]) > 59 ||
+      (Number(match[8]) === 14 && Number(match[9]) !== 0)))
   ) return null
   const date = Date.parse(value)
   return Number.isFinite(date) ? date : null

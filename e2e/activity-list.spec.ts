@@ -138,9 +138,16 @@ test('shows elapsed hours and minutes below the date using only valid trackpoint
         ${point('2024-02-29T12:00:00Z')}${point('2024-02-29T13:02:59Z')}
         ${point('2024-02-30T00:00:00Z')}${point('2024-02-29T24:00:00Z')}
         ${point('2024-03-01T12:00:00')}${point('2024-03-01T12:00:00+15:00')}
+        ${point('2024-03-01T12:00:00-15:00')}${point('2024-03-01T12:00:00+14:01')}
         <trkpt lat="0" lon="0"><x:time>2030-01-01T00:00:00Z</x:time></trkpt>
         </trkseg></trk>`,
       duration: '01:02',
+    },
+    {
+      name: 'Valid timezone offsets',
+      body: `<trk><trkseg>${point('2024-01-01T05:30:00+05:30')}${point('2024-01-01T02:35:00-00:30')}
+        ${point('2024-01-01T14:00:00+14:00')}</trkseg></trk>`,
+      duration: '03:05',
     },
     {
       name: 'Subminute',

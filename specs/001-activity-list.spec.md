@@ -66,3 +66,4 @@ This is the first step toward the route-first gallery described in `MANIFESTO.md
 - Require at least two valid trackpoint timestamps; otherwise display **Unknown**. Repeated equal timestamps yield **00:00**. Use the existing timezone/calendar validation, independent of coordinate validity, and ignore foreign extension times.
 - Format total hours and minutes as `hh:mm`, truncating leftover seconds, padding both fields to at least two digits, and retaining hours beyond 24.
 - Persist duration with activity metadata. Backfill older records on their next selected import without discarding remembered titles or prepared previews/geometry (see spec 009). Sorting and JSON exports remain unchanged.
+- Correct the shared timestamp validator's timezone capture indices so offsets beyond ±14:00 are rejected for both activity dates and durations.
