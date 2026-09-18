@@ -27,7 +27,8 @@ export async function expectLoaded(page: Page, count: number, skipped = 0) {
 export async function expectMetadataRows(page: Page, rows: string[]) {
   await expect.poll(() => page.locator('tbody tr').evaluateAll((elements) =>
     elements.map((row) => Array.from(row.querySelectorAll('.activity-name, .type-label, .activity-timestamp'), (cell) =>
-      cell instanceof HTMLInputElement ? cell.value : cell.textContent,
+      cell instanceof HTMLInputElement ? cell.value
+        : cell instanceof HTMLSelectElement ? cell.selectedOptions[0]?.textContent : cell.textContent,
     ).join('')),
   )).toEqual(rows)
 }

@@ -136,18 +136,23 @@ async function installProbe(page: Page) {
 
 test('type drafts include new categories, remain independent of titles, and can be discarded', async ({ page }) => {
   await setup(page)
-  await expect(typeEditor(page)).toHaveValue('')
+  await expect(typeEditor(page)).toHaveValue('running')
+  await expect(typeEditor(page).locator('option:checked')).toHaveText('Running')
+  await expect(page.locator('tbody .type-label')).toHaveCount(3)
+  await expect(page.locator('tbody span.type-label')).toHaveCount(0)
+  await expect(saveButton(page)).toBeDisabled()
   await typeEditor(page).focus()
   await expect(typeEditor(page).getByRole('option', { name: 'Trail Running', exact: true })).toHaveCount(1)
   await page.getByRole('button', { name: 'Hiking', exact: true }).click()
   await page.getByRole('button', { name: 'Cycling', exact: true }).click()
   await chooseType(page, 'trail_running')
   await expect(page.locator('tbody tr')).toHaveCount(1)
-  await expect(page.locator('.type-label')).toHaveText('Running')
+  await expect(typeEditor(page).locator('option:checked')).toHaveText('Trail Running')
   await expect(saveButton(page)).toHaveText('Save JSON (1)')
   await title(page, 'other/garmin-2.gpx').fill('A trail run')
   await expect(saveButton(page)).toHaveText('Save JSON (1)')
-  await chooseType(page, '')
+  await chooseType(page, 'running')
+  await expect(typeEditor(page).locator('option:checked')).toHaveText('Running')
   await expect(saveButton(page)).toHaveText('Save JSON (1)')
   await title(page, 'other/garmin-2.gpx').press('Escape')
   await expect(saveButton(page)).toBeDisabled()
@@ -173,8 +178,66 @@ test('native type selectors populate on pointer or keyboard focus without mounti
   await expect(editor.getByRole('option', { name: 'Trail Running', exact: true })).toHaveCount(1)
   await editor.press('Home')
   await editor.press('Enter')
-  await expect(editor).toHaveValue('')
+  await expect(editor).toHaveValue('running')
   await expect(saveButton(page)).toBeDisabled()
+})
+
+for (const grouped of [false, true]) {
+  test(`inline types support keyboard editing and Escape without resetting titles${grouped ? ' in route bundles' : ''}`, async ({ page }) => {
+    await setup(page, await zip(files.map(([path, contents]) => [
+      path,
+      contents.replace('</trkseg>', '<trkpt lat="0" lon="0.01"></trkpt></trkseg>'),
+    ])))
+    if (grouped) {
+      await page.getByRole('checkbox', { name: 'Group similar routes' }).check()
+      await expect(page.locator('.route-bundle')).toHaveCount(1)
+    }
+    const name = title(page, 'other/garmin-2.gpx')
+    const editor = typeEditor(page)
+    await name.fill('Independent title draft')
+    await name.press('Tab')
+    await page.keyboard.press('Tab')
+    await expect(editor).toBeFocused()
+    await expect(editor).toHaveCSS('outline-style', 'solid')
+    await editor.press('End')
+    await expect(editor).toHaveValue('walking')
+    await name.focus()
+    await expect(editor.locator('option:checked')).toHaveText('Walking')
+    await expect(editor).toHaveAttribute('title', 'Walking')
+    await expect(typeEditor(page, 'nested/garmin-1.gpx')).toHaveValue('hiking')
+    await expect(saveButton(page)).toHaveText('Save JSON (1)')
+    await editor.focus()
+    await editor.press('Escape')
+    await expect(editor).toHaveValue('running')
+    await expect(editor).not.toBeFocused()
+    await expect(editor.locator('option:checked')).toHaveText('Running')
+    await expect(name).toHaveValue('Independent title draft')
+    await expect(saveButton(page)).toHaveText('Save JSON (1)')
+    await name.press('Escape')
+    await expect(saveButton(page)).toBeDisabled()
+  })
+}
+
+test('inline type selectors preserve unknown, numeric, and unrecognized starting values', async ({ page }) => {
+  const types = [
+    { type: '', key: 'unknown', label: 'Unknown' },
+    { type: '999', key: '999', label: '999' },
+    { type: 'future_sport', key: 'future_sport', label: 'Future Sport' },
+  ]
+  await setup(page, await zip(types.map(({ type }, index) => [
+    `garmin-${index + 1}.gpx`, gpx(track('Same name', type, '2025-01-01T00:00:00Z')),
+  ])))
+  for (const [index, { key, label }] of types.entries()) {
+    const path = `garmin-${index + 1}.gpx`
+    const editor = typeEditor(page, path, 'Same name')
+    await expect(editor).toHaveValue(key)
+    await expect(editor.locator('option:checked')).toHaveText(label)
+    await chooseType(page, 'trail_running', path, 'Same name')
+    await expect(editor.locator('option:checked')).toHaveText('Trail Running')
+    await chooseType(page, key, path, 'Same name')
+    await expect(editor.locator('option:checked')).toHaveText(label)
+    await expect(saveButton(page)).toBeDisabled()
+  }
 })
 
 test('exports one combined edit per activity and hidden type-only and title-only edits without requests', async ({ page }) => {
@@ -216,7 +279,7 @@ test('saved types warm-load as baselines while separate field exports preserve r
   await save(page)
   expect(await cachedTitle(page, '2')).toBe('Saved name')
   expect(await cachedTitle(page, '2', 'type')).toBe('Trail Running')
-  await chooseType(page, '')
+  await chooseType(page, 'running')
   await title(page, 'other/garmin-2.gpx').fill('Final name')
   const titleOnly = await save(page) as TitleMappingExport
   expect(titleOnly.schemaVersion).toBe(2)
@@ -224,7 +287,8 @@ test('saved types warm-load as baselines while separate field exports preserve r
   await page.reload()
   await selectZip(page, archive)
   await expectLoaded(page, 3)
-  await expect(typeEditor(page, 'other/garmin-2.gpx', 'Final name')).toHaveValue('')
+  await expect(typeEditor(page, 'other/garmin-2.gpx', 'Final name')).toHaveValue('trail_running')
+  await expect(typeEditor(page, 'other/garmin-2.gpx', 'Final name').locator('option:checked')).toHaveText('Trail Running')
   await expect(page.getByRole('button', { name: 'Trail Running', exact: true })).toBeVisible()
   await expect(saveButton(page)).toBeDisabled()
   await expect(page.locator('.cache-summary')).toHaveAttribute('data-extracted', '0')
@@ -235,7 +299,7 @@ test('saved types warm-load as baselines while separate field exports preserve r
   await expect(page.locator('.cache-notice')).toContainText('Activity cache cleared')
   await selectZip(page, archive)
   await expectLoaded(page, 3)
-  await expect(typeEditor(page)).toHaveValue('')
+  await expect(typeEditor(page)).toHaveValue('running')
   await expect(page.getByRole('button', { name: 'Running', exact: true })).toBeVisible()
   await expect(title(page, 'other/garmin-2.gpx')).toHaveValue('Green Mountain')
 })

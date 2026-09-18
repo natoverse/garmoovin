@@ -185,7 +185,7 @@ test(`backfills legacy durations once without losing saved titles${changeType ? 
   await expect(page.locator('.cache-summary')).toHaveText('1 from cache · 2 processed')
   await expect(page.locator('.cache-summary')).toHaveAttribute('data-extracted', '2')
   await expect(first.locator('.activity-name')).toHaveValue('Remembered title')
-  await expect(first.locator('.type-label')).toHaveText(changeType ? 'Trail Running' : 'Hiking')
+  await expect(first.locator('.activity-type option:checked')).toHaveText(changeType ? 'Trail Running' : 'Hiking')
   await expect(first.locator('.activity-duration')).toContainText('01:02')
   expect(await page.evaluate(() => window.cacheProbe)).toEqual({ parses: 2, hashes: 0, renders: 0, trigonometry: 0 })
   await group(page)
@@ -196,7 +196,7 @@ test(`backfills legacy durations once without losing saved titles${changeType ? 
   await expectLoaded(page, 3)
   await expect(page.locator('.cache-summary')).toHaveText('3 from cache · 0 processed')
   await expect(first.locator('.activity-name')).toHaveValue('Remembered title')
-  await expect(first.locator('.type-label')).toHaveText(changeType ? 'Trail Running' : 'Hiking')
+  await expect(first.locator('.activity-type option:checked')).toHaveText(changeType ? 'Trail Running' : 'Hiking')
   await expect(first.locator('.activity-duration')).toContainText('01:02')
   await expect(page.locator('.activity-duration')).toHaveText([
     'Elapsed duration (hours:minutes): 00:00',
