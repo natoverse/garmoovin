@@ -1,12 +1,15 @@
 import { compareActivities, type Activity } from './gpx'
 import { digest, type Coordinate, type Route } from './route'
-import { formatFeet, formatMiles } from './units'
+import { formatMiles, METERS_PER_FOOT } from './units'
 
 const EARTH_RADIUS = 6_371_008.8
 const VERSION = 'spherical-lines-v3:rdp5:sample10:d95:length80'
 const SIMPLIFY_METRES = 5
 const SAMPLE_METRES = 10
 const EDGE_BYTES = 384
+
+export const ROUTE_TOLERANCE_FEET = { min: 25, max: 1000, step: 25, default: 150 } as const
+export type SimilarityMode = 'route' | 'area'
 
 export const SIMILARITY_LIMITS = {
   inputPoints: 100_000,
@@ -68,11 +71,13 @@ interface PreparedRoute {
   tree: Tree
   samples: Float64Array
   bytes: number
+  location?: { center: Vector; radius: number }
 }
 
 export interface PairScore {
   ids: [string, string]
   score: number
+  areaD70?: number
 }
 
 interface SimilarityCache {
@@ -350,13 +355,13 @@ async function nearest(point: Vector, tree: Tree, work: Work): Promise<number> {
   return best
 }
 
-async function percentile(distances: Float64Array, weights: Float64Array, work: Work): Promise<number> {
+async function percentile(distances: Float64Array, weights: Float64Array, quantile: number, work: Work): Promise<number> {
   let total = 0
   for (const weight of weights) {
     total += weight
     if (work.tick()) await work.pause()
   }
-  let target = total * 0.95
+  let target = total * quantile
   let start = 0
   let end = distances.length
   const swap = (a: number, b: number) => {
@@ -398,7 +403,7 @@ async function percentile(distances: Float64Array, weights: Float64Array, work: 
   throw new Error('Route similarity could not calculate a weighted percentile.')
 }
 
-async function directed(source: PreparedRoute, destination: PreparedRoute, work: Work): Promise<number> {
+async function directed(source: PreparedRoute, destination: PreparedRoute, work: Work): Promise<{ d95: number; d70: number }> {
   const count = source.samples.length / 4
   const distances = new Float64Array(count)
   const weights = new Float64Array(count)
@@ -409,7 +414,30 @@ async function directed(source: PreparedRoute, destination: PreparedRoute, work:
     ], destination.tree, work)
     weights[i] = source.samples[offset + 3]!
   }
-  return metresFromSquaredChord(await percentile(distances, weights, work))
+  const d95 = metresFromSquaredChord(await percentile(distances, weights, 0.95, work))
+  const d70 = metresFromSquaredChord(await percentile(distances, weights, 0.70, work))
+  return { d95, d70 }
+}
+
+async function location(route: PreparedRoute, work: Work): Promise<{ center: Vector; radius: number }> {
+  if (route.location) return route.location
+  const sum = [0, 0, 0]
+  let total = 0
+  for (let offset = 0; offset < route.samples.length; offset += 4) {
+    const weight = route.samples[offset + 3]!
+    total += weight
+    for (let axis = 0; axis < 3; axis++) sum[axis]! += route.samples[offset + axis]! * weight
+    if (work.tick()) await work.pause()
+  }
+  const mean: Vector = [sum[0]! / total, sum[1]! / total, sum[2]! / total]
+  const magnitude = Math.sqrt(dot(mean, mean))
+  if (!(magnitude > 0)) throw new Error('Route similarity could not determine a geographic center.')
+  // Unit vectors handle poles/dateline crossings; length weights ignore recording density.
+  route.location = {
+    center: [mean[0] / magnitude, mean[1] / magnitude, mean[2] / magnitude],
+    radius: EARTH_RADIUS * Math.sqrt(Math.max(0, 2 - 2 * magnitude)),
+  }
+  return route.location
 }
 
 function validCoordinate(point: Coordinate): boolean {
@@ -425,7 +453,7 @@ export class SimilaritySession {
   private readonly lifetime = new AbortController()
   private readonly descriptors = new Map<string, Extract<SimilarityGeometry, { status: 'ready' }>>()
   private readonly retained = new Map<string, { descriptor: WeakRef<RouteDescriptor>; bytes: number }>()
-  private readonly pairs = new Map<string, number>()
+  private readonly pairs = new Map<string, Omit<PairScore, 'ids'>>()
   private cachedBytes = 0
   private retainedBytes = 0
   private loadedPairs = ''
@@ -693,11 +721,13 @@ export class SimilaritySession {
     b: Extract<SimilarityGeometry, { status: 'ready' }>,
     tolerance: number,
     work: Work,
+    mode: SimilarityMode,
   ): Promise<boolean> {
     if (work.tick()) await work.pause()
     const shorter = Math.min(a.descriptor.length, b.descriptor.length)
     const longer = Math.max(a.descriptor.length, b.descriptor.length)
-    if (shorter / longer < 0.80 - 1e-12) return false
+    const ratio = shorter / longer
+    if (ratio < (mode === 'area' ? 0.60 : 0.80) - 1e-12) return false
     const first = prepared.get(a.descriptor)
     const second = prepared.get(b.descriptor)
     if (!first || !second || first.key !== a.key || second.key !== b.key) {
@@ -706,25 +736,32 @@ export class SimilaritySession {
     if (a.key === b.key) return true
     if (boundsDistance(first.tree.bounds, second.tree.bounds) > chordSquared(tolerance)) return false
     const key = a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`
-    let score = this.pairs.get(key)
-    if (score === undefined) {
+    let scores = this.pairs.get(key)
+    if (scores === undefined || (mode === 'area' && scores.areaD70 === undefined)) {
       this.stats.distanceComparisons++
-      score = Math.max(await directed(first, second, work), await directed(second, first, work))
+      const forward = await directed(first, second, work)
+      const reverse = await directed(second, first, work)
+      scores = { score: Math.max(forward.d95, reverse.d95), areaD70: Math.max(forward.d70, reverse.d70) }
       work.check()
       if (this.pairs.size >= SIMILARITY_LIMITS.cachedPairs) {
         this.pairs.delete(this.pairs.keys().next().value!)
       }
       if (this.persistent && a.key.startsWith('activity:') && b.key.startsWith('activity:')) {
         const ids: [string, string] = a.key < b.key ? [a.key.slice(9), b.key.slice(9)] : [b.key.slice(9), a.key.slice(9)]
-        this.pendingPairs.set(key, { ids, score })
+        this.pendingPairs.set(key, { ids, ...scores })
         if (this.pendingPairs.size >= 128) await this.flushPairs(work.signal)
         work.check()
       }
     } else {
       this.pairs.delete(key)
     }
-    this.pairs.set(key, score)
-    return score <= tolerance + 1e-7
+    this.pairs.set(key, scores)
+    if (ratio >= 0.80 - 1e-12 && scores.score <= tolerance + 1e-7) return true
+    if (mode !== 'area' || scores.areaD70! > tolerance + 1e-7) return false
+    const firstLocation = await location(first, work)
+    const secondLocation = await location(second, work)
+    const centerLimit = Math.max(tolerance, Math.min(firstLocation.radius, secondLocation.radius) / 2)
+    return squaredDistance(firstLocation.center, secondLocation.center) <= chordSquared(centerLimit) + 1e-20
   }
 
   private async flushPairs(signal: AbortSignal): Promise<void> {
@@ -736,14 +773,16 @@ export class SimilaritySession {
 
   async group(
     activities: readonly SimilarityActivity[],
-    tolerance: number,
+    toleranceFeet: number,
     signal: AbortSignal,
+    mode: SimilarityMode = 'route',
   ): Promise<SimilarityGroup[]> {
     const work = new Work(signal, this.lifetime.signal, SIMILARITY_LIMITS.groupingWork)
     work.check()
-    if (!Number.isFinite(tolerance) || tolerance < 10 || tolerance > 200) {
-      throw new Error(`Route similarity tolerance must be between ${formatFeet(10)} and ${formatFeet(200)} feet.`)
+    if (!Number.isFinite(toleranceFeet) || toleranceFeet < ROUTE_TOLERANCE_FEET.min || toleranceFeet > ROUTE_TOLERANCE_FEET.max) {
+      throw new Error(`Route similarity tolerance must be between ${ROUTE_TOLERANCE_FEET.min} and ${ROUTE_TOLERANCE_FEET.max} feet.`)
     }
+    const tolerance = toleranceFeet * METERS_PER_FOOT
     limit(activities.length > SIMILARITY_LIMITS.activities, `more than ${SIMILARITY_LIMITS.activities} visible activities.`)
     await work.pause()
     const cacheIds = Array.from(new Set(activities.flatMap(({ geometry }) =>
@@ -757,7 +796,7 @@ export class SimilaritySession {
         const key = `${activityKey(pair.ids[0])}|${activityKey(pair.ids[1])}`
         if (!this.pairs.has(key)) {
           if (this.pairs.size >= SIMILARITY_LIMITS.cachedPairs) this.pairs.delete(this.pairs.keys().next().value!)
-          this.pairs.set(key, pair.score)
+          this.pairs.set(key, { score: pair.score, areaD70: pair.areaD70 })
         }
       }
       this.loadedPairs = signature
@@ -787,7 +826,7 @@ export class SimilaritySession {
       for (const candidate of candidates) {
         let matches = true
         for (const member of candidate.geometries) {
-          if (!await this.qualifies(member, geometry, tolerance, work)) {
+          if (!await this.qualifies(member, geometry, tolerance, work, mode)) {
             matches = false
             break
           }

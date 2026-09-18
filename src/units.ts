@@ -1,3 +1,5 @@
+export const METERS_PER_FOOT = 0.3048
+
 function formatValue(value: number, precise = false): string {
   if (precise) return value.toString()
   if (value !== 0 && (Math.abs(value) < 0.01 || Math.abs(value) >= 1_000_000)) return value.toExponential(2)
@@ -5,7 +7,7 @@ function formatValue(value: number, precise = false): string {
 }
 
 export function formatFeet(meters: number, precise = false): string {
-  const feet = meters / 0.3048
+  const feet = meters / METERS_PER_FOOT
   if (Number.isFinite(feet)) return formatValue(feet, precise)
   // Scale before converting so finite extreme elevations never display as Infinity.
   const [coefficient, exponent] = (meters / 3.048).toExponential(precise ? undefined : 2).split('e')

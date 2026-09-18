@@ -41,7 +41,8 @@ function validPair(value: unknown, ids: ReadonlySet<string>): value is PairScore
   return object(value) && Array.isArray(value.ids) && value.ids.length === 2 &&
     typeof value.ids[0] === 'string' && typeof value.ids[1] === 'string' && value.ids[0] < value.ids[1] &&
     ids.has(value.ids[0]) && ids.has(value.ids[1]) &&
-    typeof value.score === 'number' && Number.isFinite(value.score) && value.score >= 0
+    typeof value.score === 'number' && Number.isFinite(value.score) && value.score >= 0 &&
+    (value.areaD70 === undefined || (typeof value.areaD70 === 'number' && Number.isFinite(value.areaD70) && value.areaD70 >= 0))
 }
 
 export class ActivityCache {

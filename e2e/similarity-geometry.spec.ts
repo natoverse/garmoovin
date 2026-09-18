@@ -1,8 +1,9 @@
 import { expect, test } from './test'
 import {
-  SIMILARITY_LIMITS, SimilaritySession, type PairScore, type SimilarityActivity, type SimilarityGeometry,
+  SIMILARITY_LIMITS, SimilaritySession, type PairScore, type SimilarityActivity, type SimilarityGeometry, type SimilarityMode,
 } from '../src/similarity'
 import type { Coordinate, Route } from '../src/route'
+import { METERS_PER_FOOT } from '../src/units'
 
 const RADIUS = 6_371_008.8
 const degrees = 180 / Math.PI / RADIUS
@@ -15,6 +16,7 @@ const route = (points: readonly XY[], longitude = 0, latitude = 0): Route => [
 ]
 const line = (offset = 0, length = 1000): Route => route([[0, offset], [length, offset]])
 const signal = () => new AbortController().signal
+const feet = (meters: number) => meters / METERS_PER_FOOT
 const activity = (
   id: string, geometry: SimilarityGeometry, date: number | null = 1, sourceFile = `${id}.gpx`,
 ): SimilarityActivity => ({ id, geometry, date, durationMs: null, sourceFile, name: id, type: 'Running' })
@@ -26,12 +28,12 @@ async function ready(session: SimilaritySession, coordinates: Route) {
   return geometry
 }
 
-async function matches(first: Route, second: Route, tolerance = 50): Promise<boolean> {
+async function matches(first: Route, second: Route, tolerance = 50, mode: SimilarityMode = 'route'): Promise<boolean> {
   const session = new SimilaritySession()
   try {
     const a = await ready(session, first)
     const b = await ready(session, second)
-    const groups = await session.group([activity('a', a), activity('b', b)], tolerance, signal())
+    const groups = await session.group([activity('a', a), activity('b', b)], feet(tolerance), signal(), mode)
     return groups.length === 1 && groups[0]!.status === 'matched'
   } finally {
     session.dispose()
@@ -43,14 +45,14 @@ test('snapshots restore usable geographic geometry without re-preparing or shari
   const first = await source.prepare(route([[0, 0], [300, 0], [300, 300], [0, 0]], 179.999, 70), signal(), '1')
   const second = await source.prepare(route([[0, 5], [300, 5], [300, 305], [0, 5]], 179.999, 70), signal(), '2')
   const snapshots = [first, second].map((geometry) => structuredClone(source.snapshot(geometry)))
-  const expected = await source.group([activity('a', first), activity('b', second)], 50, signal())
+  const expected = await source.group([activity('a', first), activity('b', second)], feet(50), signal())
   source.dispose()
   const target = new SimilaritySession()
   const a = await target.restore('1', snapshots[0], signal())
   const b = await target.restore('2', snapshots[1], signal())
   expect(target.stats.preparations).toBe(0)
   expect(target.stats.restorations).toBe(2)
-  expect(await target.group([activity('a', a), activity('b', b)], 50, signal())).toEqual(expected)
+  expect(await target.group([activity('a', a), activity('b', b)], feet(50), signal())).toEqual(expected)
   const [sameA, sameB] = await Promise.all([
     target.restore('3', snapshots[0], signal()), target.restore('3', snapshots[0], signal()),
   ])
@@ -156,6 +158,112 @@ test('bidirectional coverage rejects divergent loops on shared stems and one-way
   expect(await matches(line(0, 800), line(0, 1000), 50)).toBe(false)
 })
 
+test('area matching tolerates shortcuts and extra distance without weakening strict matching', async () => {
+  const loop: XY[] = [[0, 0], [1000, 0], [1000, 1000], [0, 1000], [0, 0]]
+  const shortcut: XY[] = [[0, 0], [1000, 0], [1000, 750], [750, 1000], [0, 1000], [0, 0]]
+  const extension: XY[] = [[0, 0], [500, 0], [500, -500], [500, 0], ...loop.slice(1)]
+  for (const [longitude, latitude] of [[0, 0], [37, 80], [179.999, 70], [-179.999, -70]]) {
+    for (const variant of [shortcut, extension, [...shortcut].reverse()]) {
+      const first = route(loop, longitude, latitude)
+      const second = route(variant, longitude, latitude)
+      expect(await matches(first, second, 50, 'route')).toBe(false)
+      expect(await matches(first, second, 50, 'area')).toBe(true)
+      expect(await matches(second, first, 50, 'area')).toBe(true)
+    }
+  }
+  // More than 20% shorter, but centered on the same corridor.
+  const shorter = route([[150, 0], [850, 0]])
+  expect(await matches(line(), shorter, 50, 'route')).toBe(false)
+  expect(await matches(line(), shorter, 50, 'area')).toBe(true)
+})
+
+test('area matching requires shared coverage, nearby centers, and comparable recorded lengths', async () => {
+  const horizontal = route([[-500, 0], [500, 0]])
+  const vertical = route([[0, -500], [0, 500]])
+  expect(await matches(horizontal, vertical, 50, 'area')).toBe(false)
+  expect(await matches(line(), line(1000), 200, 'area')).toBe(false)
+  // Over 70% shared coverage is not enough when the extension shifts the center too far.
+  expect(await matches(line(), line(0, 1400), 50, 'area')).toBe(false)
+  expect(await matches(line(), route([[-200, 0], [1200, 0]]), 50, 'area')).toBe(true)
+  const lap: XY[] = [[0, 0], [300, 0], [300, 300], [0, 300], [0, 0]]
+  expect(await matches(route(lap), route([...lap, ...lap.slice(1)]), 200, 'area')).toBe(false)
+  expect(await matches(horizontal, route([[-200, 0], [200, 0]]), 50, 'area')).toBe(false)
+})
+
+test('area centers and coverage are length-weighted rather than biased by dense points or gaps', async () => {
+  const dense: XY[] = [
+    [0, 0],
+    ...Array.from({ length: 1000 }, (_, i): XY => [i / 10, 0]),
+    [1000, 0],
+  ]
+  expect(await matches(route(dense), line(0, 800), 50, 'area')).toBe(true)
+  const disconnected = [...route([[0, 0], [100, 0]]), ...route([[900, 0], [1000, 0]])]
+  expect(await matches(disconnected, line(), 50, 'area')).toBe(false)
+})
+
+test('area variants still require every pair to match instead of chaining overlapping routes', async () => {
+  const session = new SimilaritySession()
+  try {
+    const activities = []
+    for (const [id, halfLength, date] of [['a', 500, 3], ['b', 400, 2], ['c', 300, 1]] as const) {
+      activities.push(activity(id, await ready(session, route([[-halfLength, 0], [halfLength, 0]])), date))
+    }
+    expect(await session.group(activities, 75, signal(), 'area')).toEqual([
+      { members: ['a', 'b'], status: 'matched' }, { members: ['c'], status: 'unmatched' },
+    ])
+    expect(await session.group(activities.slice(1), 75, signal(), 'area')).toEqual([
+      { members: ['b', 'c'], status: 'matched' },
+    ])
+  } finally { session.dispose() }
+})
+
+test('native feet thresholds control matching rather than retaining the previous metric thresholds', async () => {
+  const session = new SimilaritySession()
+  try {
+    const activities = [activity('a', await ready(session, line())), activity('b', await ready(session, line(32)))]
+    for (const mode of ['route', 'area'] as const) {
+      expect(await session.group(activities, 100, signal(), mode)).toHaveLength(2)
+      expect(await session.group(activities, 125, signal(), mode)).toHaveLength(1)
+    }
+    for (const invalid of [24, 1001, NaN, Infinity]) {
+      await expect(session.group([], invalid, signal())).rejects.toThrow('25 and 1000 feet')
+    }
+  } finally { session.dispose() }
+})
+
+test('area matching reuses richer scores across modes, filters, tolerance changes, and warm restoration', async () => {
+  const stored = new Map<string, PairScore>()
+  const cache = {
+    async readPairs() { return [...stored.values()] },
+    async writePairs(pairs: readonly PairScore[]) {
+      for (const pair of pairs) stored.set(JSON.stringify(pair.ids), structuredClone(pair))
+    },
+  }
+  const cold = new SimilaritySession(cache)
+  const warm = new SimilaritySession(cache)
+  try {
+    const first = await cold.prepare(line(), signal(), '1')
+    const second = await cold.prepare(line(0, 800), signal(), '2')
+    const activities = [activity('a', first), activity('b', second)]
+    expect(await cold.group(activities, 150, signal(), 'route')).toHaveLength(2)
+    expect(await cold.group(activities, 150, signal(), 'area')).toHaveLength(1)
+    expect(await cold.group(activities, 100, signal(), 'area')).toHaveLength(1)
+    expect(cold.stats.distanceComparisons).toBe(1)
+    expect([...stored.values()][0]!.areaD70).toBeCloseTo(0)
+    const restored = [
+      activity('a', await warm.restore('1', structuredClone(cold.snapshot(first)), signal())),
+      activity('b', await warm.restore('2', structuredClone(cold.snapshot(second)), signal())),
+    ]
+    expect(await warm.group(restored, 150, signal(), 'area')).toHaveLength(1)
+    expect(await warm.group(restored, 150, signal(), 'route')).toHaveLength(2)
+    expect(await warm.group(restored.slice(1), 150, signal(), 'area')).toHaveLength(1)
+    expect(warm.stats).toEqual({ preparations: 0, restorations: 2, distanceComparisons: 0 })
+  } finally {
+    cold.dispose()
+    warm.dispose()
+  }
+})
+
 test('the fixed length guard counts laps and collinear out-and-backs after simplification', async () => {
   const lap: XY[] = [[0, 0], [300, 0], [300, 300], [0, 300], [0, 0]]
   const laps = (count: number) => route([lap[0]!, ...Array.from({ length: count }, () => lap.slice(1)).flat()])
@@ -221,14 +329,14 @@ test('all-member greedy groups are deterministic, filter-local, and sorted by da
   const c = await ready(session, line(80))
   const activities = [activity('c', c, 1), activity('b', b, 2), activity('a', a, 3)]
   const before = JSON.stringify(activities)
-  expect(await session.group(activities, 50, signal())).toEqual([
+  expect(await session.group(activities, feet(50), signal())).toEqual([
     { members: ['a', 'b'], status: 'matched' },
     { members: ['c'], status: 'unmatched' },
   ])
-  expect(await session.group(activities.slice(0, 2), 50, signal())).toEqual([
+  expect(await session.group(activities.slice(0, 2), feet(50), signal())).toEqual([
     { members: ['b', 'c'], status: 'matched' },
   ])
-  expect(await session.group(activities, 100, signal())).toEqual([
+  expect(await session.group(activities, feet(100), signal())).toEqual([
     { members: ['a', 'b', 'c'], status: 'matched' },
   ])
   expect(JSON.stringify(activities)).toBe(before)
@@ -236,7 +344,7 @@ test('all-member greedy groups are deterministic, filter-local, and sorted by da
     activity('z', a, null, 'a.gpx'), activity('c', a, 2, 'folder/z.gpx'),
     activity('b', a, 2, 'folder/a.gpx'), activity('a', a, 2, 'folder/a.gpx'),
   ]
-  expect(await session.group(tied, 50, signal())).toEqual([
+  expect(await session.group(tied, feet(50), signal())).toEqual([
     { members: ['a', 'b', 'c', 'z'], status: 'matched' },
   ])
   session.dispose()
@@ -253,14 +361,14 @@ test('missing, pending, failed, unmatched, and matched activities are each retai
     activity('d', { status: 'pending' }, 2),
     activity('c', { status: 'missing' }, 3),
     activity('b', geometry, 4), activity('a', geometry, 5),
-  ], 50, signal())
+  ], feet(50), signal())
   expect(groups).toEqual([
     { members: ['a', 'b'], status: 'matched' },
     { members: ['c'], status: 'missing' },
     { members: ['d'], status: 'pending' },
     { members: ['e'], status: 'error', message: 'Example failure' },
   ])
-  expect(await session.group([], 50, signal())).toEqual([])
+  expect(await session.group([], feet(50), signal())).toEqual([])
   session.dispose()
 })
 
@@ -272,11 +380,11 @@ test('relaxing tolerance can rearrange greedy groups instead of monotonically me
     activity('c', await ready(session, line(40)), 2),
     activity('d', await ready(session, line(120)), 1),
   ]
-  expect(await session.group(activities, 50, signal())).toEqual([
+  expect(await session.group(activities, feet(50), signal())).toEqual([
     { members: ['a', 'c'], status: 'matched' },
     { members: ['b', 'd'], status: 'matched' },
   ])
-  expect(await session.group(activities, 100, signal())).toEqual([
+  expect(await session.group(activities, feet(100), signal())).toEqual([
     { members: ['a', 'b', 'c'], status: 'matched' },
     { members: ['d'], status: 'unmatched' },
   ])
@@ -292,7 +400,7 @@ test('derived geometry reuse is session-local and independent of filenames and r
   raw[0]!.splice(0)
   expect(await session.group([
     activity('a', first, 1, 'first.gpx'), activity('b', second, 1, 'renamed.gpx'),
-  ], 10, signal())).toEqual([{ members: ['a', 'b'], status: 'matched' }])
+  ], feet(10), signal())).toEqual([{ members: ['a', 'b'], status: 'matched' }])
   const other = new SimilaritySession()
   const third = await ready(other, line())
   expect(third.key).toBe(first.key)
@@ -312,7 +420,7 @@ test('activity-held geometry is reusable even after eviction from the bounded st
   const rederived = await ready(session, line())
   expect(rederived.key).toBe(first.key)
   expect(rederived.descriptor).toBe(first.descriptor)
-  expect(await session.group([activity('a', first), activity('b', rederived)], 10, signal()))
+  expect(await session.group([activity('a', first), activity('b', rederived)], feet(10), signal()))
     .toEqual([{ members: ['a', 'b'], status: 'matched' }])
   session.dispose()
 })
@@ -339,7 +447,7 @@ test('session geometry budget includes descriptors retained by cards beyond the 
   const duplicate = await ready(session, longRoute)
   expect(duplicate.descriptor).toBe((held[0] as Extract<SimilarityGeometry, { status: 'ready' }>).descriptor)
   const last = held.at(-1)!
-  expect(await session.group([activity('a', last), activity('b', last)], 10, signal())).toHaveLength(1)
+  expect(await session.group([activity('a', last), activity('b', last)], feet(10), signal())).toHaveLength(1)
   session.dispose()
   const replacement = new SimilaritySession()
   expect((await replacement.prepare(longRoute, signal())).status).toBe('ready')
@@ -355,19 +463,19 @@ test('pair scores are reused across tolerances, and geographic rejections do not
   let geographicCalculations = 0
   Math.atan2 = (y, x) => { geographicCalculations++; return atan2(y, x) }
   try {
-    expect(await session.group(activities, 20, signal())).toHaveLength(2)
+    expect(await session.group(activities, feet(20), signal())).toHaveLength(2)
     expect(geographicCalculations).toBeGreaterThan(0)
     geographicCalculations = 0
-    expect(await session.group(activities, 40, signal())).toHaveLength(1)
+    expect(await session.group(activities, feet(40), signal())).toHaveLength(1)
     expect(geographicCalculations).toBe(0)
-    expect(await session.group(activities, 20, signal())).toHaveLength(2)
+    expect(await session.group(activities, feet(20), signal())).toHaveLength(2)
     expect(geographicCalculations).toBe(0)
   } finally {
     Math.atan2 = atan2
   }
   const parallel = [activity('a', await ready(session, line())), activity('b', await ready(session, line(30)))]
-  expect(await session.group(parallel, 20, signal())).toHaveLength(2)
-  expect(await session.group(parallel, 40, signal())).toHaveLength(1)
+  expect(await session.group(parallel, feet(20), signal())).toHaveLength(2)
+  expect(await session.group(parallel, feet(40), signal())).toHaveLength(1)
   session.dispose()
 })
 
@@ -398,14 +506,14 @@ test('523 routes can exceed the old work budget and reuse every pair within and 
     if (first.status !== 'ready') throw new Error('Expected ready geometry')
     // Both directions visit a tree node/edge and weight/partition every sample.
     expect(pairCount * first.descriptor.sampleCount * 8).toBeGreaterThan(40_000_000)
-    const groups = await cold.group(activities, 50, signal())
+    const groups = await cold.group(activities, feet(50), signal())
     expect(groups).toHaveLength(1)
     expect(groups[0]!.status).toBe('matched')
     expect(groups[0]!.members).toHaveLength(523)
     expect(cold.stats.distanceComparisons).toBe(pairCount)
     expect(stored.size).toBe(pairCount)
 
-    expect(await cold.group(activities, 10, signal())).toEqual(groups)
+    expect(await cold.group(activities, feet(10), signal())).toEqual(groups)
     expect(cold.stats.distanceComparisons).toBe(pairCount)
 
     const snapshots = activities.map(({ geometry }) => structuredClone(cold.snapshot(geometry)))
@@ -414,8 +522,8 @@ test('523 routes can exceed the old work budget and reuse every pair within and 
     for (const [i, entry] of activities.entries()) {
       restored.push({ ...entry, geometry: await warm.restore(entry.id, snapshots[i], signal()) })
     }
-    expect(await warm.group(restored, 50, signal())).toEqual(groups)
-    expect(await warm.group(restored.slice(0, 300), 10, signal())).toEqual([{
+    expect(await warm.group(restored, feet(50), signal())).toEqual(groups)
+    expect(await warm.group(restored.slice(0, 300), feet(10), signal())).toEqual([{
       members: groups[0]!.members.filter((id) => Number(id) <= 300), status: 'matched',
     }])
     expect(warm.stats).toEqual({ preparations: 0, restorations: 523, distanceComparisons: 0 })
@@ -443,7 +551,7 @@ test('oversized geometry and ambiguous geography fail explicitly without truncat
     activity(String(i), { status: 'missing' }),
   )
   await expect(session.group(tooMany, 50, signal())).rejects.toThrow('not truncated')
-  await expect(session.group([], NaN, signal())).rejects.toThrow('32.81 and 656.17 feet')
+  await expect(session.group([], NaN, signal())).rejects.toThrow('25 and 1000 feet')
   session.dispose()
 })
 

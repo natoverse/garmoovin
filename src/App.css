@@ -64,6 +64,7 @@ progress { width: 100%; height: 8px; accent-color: var(--secondary); display: bl
 .similarity-panel { background: var(--bg-sunk); }
 .similarity-panel label { display: block; margin-top: var(--space-4); font-size: var(--text-sm); font-weight: 700; }
 .similarity-panel input { accent-color: var(--secondary); }
+.similarity-panel select { display: block; width: min(100%, 420px); min-height: 44px; margin-top: var(--space-2); padding: 8px; border: var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font: inherit; }
 .similarity-panel input[type="range"] { display: block; width: min(100%, 420px); min-height: 40px; margin: var(--space-1) 0; }
 .similarity-panel .grouping-toggle { display: flex; align-items: center; gap: var(--space-3); min-height: 44px; }
 .grouping-toggle input { width: 18px; height: 18px; }

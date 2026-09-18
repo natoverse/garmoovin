@@ -4,11 +4,10 @@ import { formatDate, formatDuration } from './gpx'
 import { digest } from './route'
 import RouteThumbnail from './RouteThumbnail'
 import ElevationPreview, { ElevationStats } from './ElevationPreview'
-import { SimilaritySession, type SimilarityGroup } from './similarity'
+import { ROUTE_TOLERANCE_FEET, SimilaritySession, type SimilarityGroup, type SimilarityMode } from './similarity'
 import { ActivityCache } from './activity-cache'
 import { candidateActivityId, createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
 import { useSimilarity } from './use-similarity'
-import { formatFeet } from './units'
 import { activityTypeKey, activityTypeLabel, activityTypeOptions } from './activity-types'
 import logo from './assets/groomin-logo.jpg'
 import './theme.css'
@@ -38,7 +37,8 @@ export default function App() {
   const [cacheNotice, setCacheNotice] = useState<{ warning: boolean; message: string } | null>(null)
   const [clearingCache, setClearingCache] = useState(false)
   const [grouping, setGrouping] = useState(false)
-  const [tolerance, setTolerance] = useState(50)
+  const [tolerance, setTolerance] = useState<number>(ROUTE_TOLERANCE_FEET.default)
+  const [similarityMode, setSimilarityMode] = useState<SimilarityMode>('area')
   const [cache] = useState(() => new ActivityCache((message) => setCacheNotice({ warning: true, message })))
   const currentImport = useRef<AbortController | null>(null)
   const similarity = useRef<SimilaritySession | null>(null)
@@ -79,7 +79,8 @@ export default function App() {
     setExportNotice(null)
     setSearch('')
     setGrouping(false)
-    setTolerance(50)
+    setTolerance(ROUTE_TOLERANCE_FEET.default)
+    setSimilarityMode('area')
     setTypeSelection({ defaultSelected: true, exceptions: new Set() })
     setState({ phase: 'loading', archiveName: file.name, progress: null })
     try {
@@ -202,7 +203,7 @@ export default function App() {
   const duplicateSourceFiles = new Set(progress?.duplicateSourceFiles ?? [])
   const exportErrors = titleExportErrors(changes, duplicateSourceFiles)
   const hasBlockedChanges = exportErrors.size > 0
-  const { groups, analyzing } = useSimilarity(similarity.current, visibleActivities, grouping, tolerance)
+  const { groups, analyzing } = useSimilarity(similarity.current, visibleActivities, grouping, tolerance, similarityMode)
   const byId = new Map(grouping ? visibleActivities.map((activity) => [activity.id, activity]) : [])
   const groupById = new Map(groups.flatMap((group) => group.members.map((id) => [id, group] as const)))
   const bundles = groups.filter((group) => group.members.length > 1)
@@ -426,9 +427,16 @@ export default function App() {
             <input type="checkbox" checked={grouping} onChange={(event) => setGrouping(event.currentTarget.checked)} />
             Group similar routes
           </label>
-          <label htmlFor="route-tolerance">Route tolerance: <span>{formatFeet(tolerance)} ft</span> — lower is stricter</label>
-          <input id="route-tolerance" type="range" min="10" max="200" step="10" value={tolerance} aria-valuetext={`${formatFeet(tolerance)} feet`} onChange={(event) => setTolerance(Number(event.currentTarget.value))} />
-          <p>Suggestions for human review, not proof of the same route. No titles are chosen or changed. Every pair in a group must be within tolerance for 95% of both recorded routes, with a shorter/longer length ratio of at least 80%.</p>
+          <label htmlFor="similarity-mode">Match by</label>
+          <select id="similarity-mode" value={similarityMode} onChange={(event) => setSimilarityMode(event.currentTarget.value as SimilarityMode)}>
+            <option value="area">Similar area · allow shortcuts and extra distance</option>
+            <option value="route">Strict route · near-identical paths</option>
+          </select>
+          <label htmlFor="route-tolerance">Route tolerance: <span>{tolerance} ft</span> — lower is stricter</label>
+          <input id="route-tolerance" type="range" min={ROUTE_TOLERANCE_FEET.min} max={ROUTE_TOLERANCE_FEET.max} step={ROUTE_TOLERANCE_FEET.step} value={tolerance} aria-valuetext={`${tolerance} feet`} onChange={(event) => setTolerance(Number(event.currentTarget.value))} />
+          <p>Suggestions for human review, not proof of the same route. No titles are chosen or changed. {similarityMode === 'area'
+            ? 'Similar area includes strict matches and routes with at least 70% of each path within tolerance, a shorter/longer length ratio of at least 60%, and nearby length-weighted geographic centers. Centers must be within the larger of the tolerance or half the smaller route’s typical radius; a shared center alone is not a match.'
+            : 'Every pair in a group must be within tolerance for 95% of both recorded routes, with a shorter/longer length ratio of at least 80%.'}</p>
           <p>Routes keep their location, scale, and orientation. Travel direction and loop starting points do not matter. Small detours or nearby parallel paths can match; extra laps or large GPS spikes may not.</p>
           <p>Groups are rebuilt after filtering. A looser tolerance can rearrange groups, not just merge them. Matches appear first as expanded bundles. Each heading uses the newest member's imported title, not a preferred or shared title.</p>
           <p>Prepared routes and computed pair distances are cached on this device. Bundles are rebuilt for the current filters; clearing the activity cache removes the saved comparison data.</p>
