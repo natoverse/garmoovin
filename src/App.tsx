@@ -30,6 +30,7 @@ export default function App() {
   const [typeSelection, setTypeSelection] = useState<TypeSelection>({ defaultSelected: true, exceptions: new Set() })
   const [drafts, setDrafts] = useState<Map<string, string>>(() => new Map())
   const [typeDrafts, setTypeDrafts] = useState<Map<string, string>>(() => new Map())
+  const [selectedActivities, setSelectedActivities] = useState<Set<string>>(() => new Set())
   const [editingType, setEditingType] = useState<string | null>(null)
   const [lastExportSignature, setLastExportSignature] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -74,6 +75,7 @@ export default function App() {
     downloadUrl.current = null
     setDrafts(new Map())
     setTypeDrafts(new Map())
+    setSelectedActivities(new Set())
     setEditingType(null)
     setLastExportSignature(null)
     setExportNotice(null)
@@ -195,6 +197,12 @@ export default function App() {
   const visibleActivities = activities.filter(
     (activity) => isTypeSelected(activity.type) && activity.name.toLowerCase().includes(query),
   )
+  const selected = activities.filter((activity) => selectedActivities.has(activity.id))
+  const hiddenSelectionCount = selected.length - visibleActivities.filter((activity) => selectedActivities.has(activity.id)).length
+  const firstTitle = selected[0] ? drafts.get(selected[0].id) ?? selected[0].name : ''
+  const sharedTitle = selected.every((activity) => (drafts.get(activity.id) ?? activity.name) === firstTitle) ? firstTitle : ''
+  const firstType = selected[0] ? typeDrafts.get(selected[0].id) ?? activityTypeKey(selected[0].type) : ''
+  const sharedType = selected.every((activity) => (typeDrafts.get(activity.id) ?? activityTypeKey(activity.type)) === firstType) ? firstType : ''
   const issues = progress?.issues ?? []
   const loading = state.phase === 'loading'
   const changes = pendingTitleChanges(activities, drafts, typeDrafts)
@@ -213,6 +221,38 @@ export default function App() {
   const ungroupedCount = ungroupedActivities.length
   const pendingGeometryCount = activities.filter((activity) => activity.geometry.status === 'pending').length
 
+  function toggleActivity(id: string) {
+    setSelectedActivities((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function editSelected(field: 'title' | 'type', value: string | null) {
+    const setValues = field === 'title' ? setDrafts : setTypeDrafts
+    setValues((current) => {
+      const next = new Map(current)
+      for (const activity of selected) {
+        const startingValue = field === 'title' ? activity.name : activityTypeKey(activity.type)
+        if (value === null || value === startingValue) next.delete(activity.id)
+        else next.set(activity.id, value)
+      }
+      return next
+    })
+  }
+
+  function finishSelectedTitles() {
+    setDrafts((current) => {
+      const next = new Map(current)
+      for (const activity of selected) {
+        if (next.has(activity.id) && !next.get(activity.id)!.trim()) next.delete(activity.id)
+      }
+      return next
+    })
+  }
+
   function groupLabel(group: SimilarityGroup) {
     if (group.status === 'pending') return 'Analysis pending'
     if (group.status === 'missing') return 'No usable route · missing or degenerate geometry'
@@ -225,7 +265,7 @@ export default function App() {
       <div className="table-container" role="region" aria-label={label} tabIndex={0}>
         <table>
           <caption className="visually-hidden">{label}. Activities with north-up route previews, newest first. Elevation profiles use independent distance and elevation scales. Dates are in UTC. Elapsed durations are in hours and minutes.</caption>
-          <thead><tr><th scope="col" className="route-cell">Route</th><th scope="col" className="elevation-cell">Elevation</th><th scope="col" className="name-heading">Title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
+          <thead><tr><th scope="col">Select</th><th scope="col" className="route-cell">Route</th><th scope="col" className="elevation-cell">Elevation</th><th scope="col" className="name-heading">Title</th><th scope="col" className="type-heading">Type</th><th scope="col">Date (UTC)</th></tr></thead>
           <tbody>
             {list.map((activity) => {
               const group = groupById.get(activity.id)
@@ -233,7 +273,15 @@ export default function App() {
               const startingType = activityTypeKey(activity.type)
               const typeDraft = typeDrafts.get(activity.id)
               return (
-                <tr key={activity.id} data-route-group={group?.members[0]}>
+                <tr key={activity.id} data-route-group={group?.members[0]} data-selected={selectedActivities.has(activity.id)}>
+                  <td className="selection-cell">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${activity.name} (${activity.sourceFile})`}
+                      checked={selectedActivities.has(activity.id)}
+                      onChange={() => toggleActivity(activity.id)}
+                    />
+                  </td>
                   <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
                   <td className="elevation-cell"><ElevationPreview profile={activity.elevation} name={activity.name} /></td>
                   <td className="activity-details">
@@ -486,6 +534,67 @@ export default function App() {
           <p>{grouping ? 'Matching bundles first; newest first within each bundle and ungrouped list' : 'Newest first'} <span aria-hidden="true">/</span> Dates in UTC</p>
         </div>
         <p className="results-count" aria-live="polite" aria-atomic="true">Showing {visibleActivities.length} of {activities.length} activities</p>
+        {activities.length > 0 && (
+          <section className="selection-panel" aria-labelledby="selection-heading">
+            <header className="selection-header">
+              <div>
+                <h3 id="selection-heading">Activity selection</h3>
+                <p aria-live="polite" aria-atomic="true">{selected.length} selected{hiddenSelectionCount > 0 ? ` · ${hiddenSelectionCount} hidden by filters` : ''}</p>
+              </div>
+              <div className="filter-actions">
+                <button type="button" className="secondary-button" aria-label="Select all shown activities" disabled={visibleActivities.length === 0}
+                  onClick={() => setSelectedActivities((current) => new Set([...current, ...visibleActivities.map((activity) => activity.id)]))}>Select all</button>
+                <button type="button" className="secondary-button" aria-label="Select none of the activities" disabled={selected.length === 0}
+                  onClick={() => setSelectedActivities(new Set())}>Select none</button>
+              </div>
+            </header>
+            <p>Select all adds currently shown activities. Select none clears the entire selection without discarding edits.</p>
+            {selected.length > 1 && (
+              <>
+                <div className="bulk-editors">
+                  <div className="bulk-field">
+                    <label htmlFor="bulk-title">Title for selected activities</label>
+                    <input id="bulk-title" type="text" value={sharedTitle} placeholder="Mixed titles"
+                      autoComplete="off" spellCheck={false} aria-describedby="bulk-edit-help"
+                      onChange={(event) => editSelected('title', event.currentTarget.value)}
+                      onBlur={finishSelectedTitles}
+                      onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) return
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          editSelected('title', null)
+                          event.currentTarget.blur()
+                        } else if (event.key === 'Enter') {
+                          event.preventDefault()
+                          event.currentTarget.blur()
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="bulk-field">
+                    <label htmlFor="bulk-type">Type for selected activities</label>
+                    <select id="bulk-type" value={sharedType} aria-describedby="bulk-edit-help"
+                      onChange={(event) => editSelected('type', event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) return
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          editSelected('type', null)
+                          event.currentTarget.blur()
+                        }
+                      }}
+                    >
+                      <option value="" disabled>Mixed types</option>
+                      {sharedType && !editableTypes.includes(sharedType) && <option value={sharedType}>{selected[0]!.type}</option>}
+                      {editableTypes.map((key) => <option key={key} value={key}>{activityTypeLabel(key)}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <p id="bulk-edit-help">Changes apply immediately to every selected activity, including hidden selections. Escape restores each activity's starting value for that field. Leaving a blank title restores starting titles.</p>
+              </>
+            )}
+          </section>
+        )}
         {grouping && (
           <p className="similarity-count" aria-live="polite" aria-atomic="true">
             {similarGroupCount} route {similarGroupCount === 1 ? 'bundle' : 'bundles'} · {ungroupedCount} ungrouped {ungroupedCount === 1 ? 'activity' : 'activities'}{analyzing ? ' · Analysis pending' : ''}
