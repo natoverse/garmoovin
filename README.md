@@ -141,6 +141,8 @@ These are review suggestions, not proof of equivalence. Small detours covering u
 
 Prepared geometry and numerical pair distances persist in the activity cache. A warm import restores the spatial representation without simplifying or sampling the GPX again; a cached distance works across tolerance changes. Only comparisons actually requested by grouping are computed, so newly encountered pairs can still take time. Filtering, regrouping, and slider changes do not reparse GPX or redraw previews. Clearing leaves the current in-memory view usable but removes its persistent data. Analysis remains interruptible, and existing resource limits retain activities with an explanation rather than truncating routes.
 
+The **analysis work limit** measures computation, not activity count: long or overlapping routes can require many sample-to-route comparisons. Grouping allows up to 5,000 visible activities and 4 billion work units per run (100× the previous budget). The in-memory cache holds 150,000 pair scores, enough for all 136,503 pairs among 523 activities. First-time grouping can still take a while; completed scores for unique Garmin IDs persist for reuse without clearing or rebuilding compatible caches. Per-route preparation and geometry-memory limits remain separate.
+
 ## Privacy
 
 Archive contents are processed in browser memory. The website has no login, activity upload, analytics, or map service. Reloading the page clears the imported activity list, and the source archive remains unchanged.

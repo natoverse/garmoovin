@@ -68,3 +68,10 @@ Investigation of a privately supplied example confirmed the expected matches wit
 
 - Display route tolerance in feet, including the slider label and accessible value: 32.81–656.17 ft, initially 164.04 ft. Keep the underlying 10–200 meter range, 10-meter step, and 50-meter default so this presentation change cannot alter route bundles.
 - Use feet in tolerance validation messages and miles in the recorded-distance resource-limit message. Geometry, pair scores, cache formats, matching thresholds, cancellation, and keyboard behavior remain unchanged.
+
+## Cold-analysis capacity iteration (2026-09-18)
+
+- Raise the aggregate grouping budget from 40 million to 4 billion work units. The previous computation ceiling could reject a valid several-hundred-route archive well below the separate 5,000-activity cap; route length, spatial overlap, and required pair count determine the cost.
+- Raise bounded session pair-score reuse from 10,000 to 150,000 entries, enough to retain every possible pair among 523 activities (136,503). Otherwise eviction could repeat already-persisted comparisons during regrouping or after loading a warm cache.
+- Keep the 8-million-unit per-route preparation budget, geometry memory/size limits, cooperative yields, cancellation, matching thresholds, and deterministic grouping unchanged. Do not change the geometry/cache version: existing derived data and scores remain valid.
+- Add a synthetic 523-ID regression that performs more than the old grouping budget, retains every completed score, and does no new distance calculations on tolerance changes or fresh-session restoration. This does not establish a cold-time guarantee for an unseen private archive.

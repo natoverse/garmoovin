@@ -20,7 +20,7 @@ Use a new `groomin-activities` database with two stores:
 - Store complete successful/known-empty activity records atomically. An activity with a processing failure remains visible but is not saved as a complete warm record; retry through the ordinary path next time.
 - Do basic record/format validation, not source-content verification. Missing, invalid, or unavailable cached data takes the reported cold path rather than masquerading as a successful hit.
 - Do not migrate geometry-hash thumbnail entries into ID records. The first import after this feature is cold. The new clear action also removes `groomin-thumbnails` and `garmin-view-thumbnails`.
-- Retain existing in-memory geometry/work limits. Read records for the selected IDs, not the entire history. Let storage quota failures use the visible uncached fallback; do not add a disk-eviction subsystem in this iteration.
+- Retain bounded in-memory geometry/work limits. The subsequent cold-analysis iteration in spec 006 raises grouping work to 4 billion units and pair-score reuse to 150,000 entries without changing geometry limits or the cache format. Read records for the selected IDs, not the entire history. Let storage quota failures use the visible uncached fallback; do not add a disk-eviction subsystem in this iteration.
 
 ### Import fast path
 

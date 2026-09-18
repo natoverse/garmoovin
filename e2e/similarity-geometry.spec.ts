@@ -1,6 +1,6 @@
 import { expect, test } from './test'
 import {
-  SIMILARITY_LIMITS, SimilaritySession, type SimilarityActivity, type SimilarityGeometry,
+  SIMILARITY_LIMITS, SimilaritySession, type PairScore, type SimilarityActivity, type SimilarityGeometry,
 } from '../src/similarity'
 import type { Coordinate, Route } from '../src/route'
 
@@ -369,6 +369,60 @@ test('pair scores are reused across tolerances, and geographic rejections do not
   expect(await session.group(parallel, 20, signal())).toHaveLength(2)
   expect(await session.group(parallel, 40, signal())).toHaveLength(1)
   session.dispose()
+})
+
+test('523 routes can exceed the old work budget and reuse every pair within and across sessions', async () => {
+  test.setTimeout(120_000)
+  const stored = new Map<string, PairScore>()
+  const cache = {
+    async readPairs(ids: readonly string[]) {
+      const selected = new Set(ids)
+      return [...stored.values()].filter((pair) => pair.ids.every((id) => selected.has(id)))
+    },
+    async writePairs(pairs: readonly PairScore[]) {
+      for (const pair of pairs) stored.set(JSON.stringify(pair.ids), structuredClone(pair))
+    },
+  }
+  const cold = new SimilaritySession(cache)
+  const warm = new SimilaritySession(cache)
+  try {
+    const activities: SimilarityActivity[] = []
+    for (let i = 1; i <= 523; i++) {
+      const id = String(i)
+      const geometry = await cold.prepare(line(0, 500), signal(), id)
+      expect(geometry.status).toBe('ready')
+      activities.push(activity(id, geometry))
+    }
+    const pairCount = activities.length * (activities.length - 1) / 2
+    const first = activities[0]!.geometry
+    if (first.status !== 'ready') throw new Error('Expected ready geometry')
+    // Both directions visit a tree node/edge and weight/partition every sample.
+    expect(pairCount * first.descriptor.sampleCount * 8).toBeGreaterThan(40_000_000)
+    const groups = await cold.group(activities, 50, signal())
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.status).toBe('matched')
+    expect(groups[0]!.members).toHaveLength(523)
+    expect(cold.stats.distanceComparisons).toBe(pairCount)
+    expect(stored.size).toBe(pairCount)
+
+    expect(await cold.group(activities, 10, signal())).toEqual(groups)
+    expect(cold.stats.distanceComparisons).toBe(pairCount)
+
+    const snapshots = activities.map(({ geometry }) => structuredClone(cold.snapshot(geometry)))
+    cold.dispose()
+    const restored: SimilarityActivity[] = []
+    for (const [i, entry] of activities.entries()) {
+      restored.push({ ...entry, geometry: await warm.restore(entry.id, snapshots[i], signal()) })
+    }
+    expect(await warm.group(restored, 50, signal())).toEqual(groups)
+    expect(await warm.group(restored.slice(0, 300), 10, signal())).toEqual([{
+      members: groups[0]!.members.filter((id) => Number(id) <= 300), status: 'matched',
+    }])
+    expect(warm.stats).toEqual({ preparations: 0, restorations: 523, distanceComparisons: 0 })
+  } finally {
+    cold.dispose()
+    warm.dispose()
+  }
 })
 
 test('oversized geometry and ambiguous geography fail explicitly without truncation', async () => {
