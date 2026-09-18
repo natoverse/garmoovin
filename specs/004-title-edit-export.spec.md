@@ -73,3 +73,10 @@ For this stage, the app runs on localhost. No deployment, Garmin authentication,
 - Title-only exports retain schema 2. Any export containing a type change uses schema 3 as defined in spec 007; an omitted field means leave that remote field unchanged.
 - Save JSON remembers only exported title/type fields in complete cached records for the next import, as specified in spec 009. No bulk recategorization, Garmin browser requests, or automatic write-back is introduced.
 - Populate each native selector's full option list on pointer/keyboard focus; inactive selectors retain only their starting and selected values. This avoids thousands of unnecessary option elements when regrouping large archives.
+
+## Inline type refinement decisions (2026-09-18)
+
+- Unify the read-only type badge and separate selector into one tag-styled native dropdown, prefilled with the starting type and showing the draft after selection. Like the inline title editor, it displays only the current value, with hover and keyboard-focus affordances.
+- Keep the starting type as an option, without a "Keep" prefix; choosing it removes only the type draft. Escape with the native menu closed restores the starting type and leaves the editor. Preserve native pointer and keyboard selection, including Enter to confirm a menu choice.
+- Preserve unknown, numeric, and unrecognized starting labels even when they are not offered as new categories. Bound the single-line selector to 180 pixels; long labels remain available in the native menu and full-value tooltip rather than wrapping a separate badge.
+- Retain lazy option population, independent title/type drafts, grouped-list editing, original-type filtering, export validation, cache persistence, and discard safeguards. These decisions supersede the separate starting-type badge presentation above.

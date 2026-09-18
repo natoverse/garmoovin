@@ -345,29 +345,41 @@ for (const { width, widerFont } of [320, 600, 601, 768, 1440].flatMap((width) =>
       expect(await details.locator(label).evaluate((element) => element.getBoundingClientRect().width <= element.parentElement!.getBoundingClientRect().width)).toBe(true)
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    const badge = await row(page, 'route.gpx').locator('.type-label').evaluate((element) => {
+    const badge = await row(page, 'route.gpx').locator('select.type-label').evaluate((element: HTMLSelectElement) => {
       const style = getComputedStyle(element)
+      const context = document.createElement('canvas').getContext('2d')!
+      context.font = style.font
+      context.letterSpacing = style.letterSpacing
       return {
         height: element.clientHeight,
-        oneLineHeight: Math.ceil(parseFloat(style.lineHeight) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)),
+        oneLineHeight: Math.ceil(Math.max(
+          parseFloat(style.minHeight) - parseFloat(style.borderTopWidth) - parseFloat(style.borderBottomWidth),
+          parseFloat(style.lineHeight) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+        )),
         width: element.clientWidth,
         font: style.fontFamily,
+        textWidth: context.measureText(element.selectedOptions[0]!.textContent ?? '').width,
+        availableTextWidth: element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 20,
       }
     })
     expect(badge.height, JSON.stringify(badge)).toBeLessThanOrEqual(badge.oneLineHeight)
+    expect(badge.textWidth, JSON.stringify(badge)).toBeLessThanOrEqual(badge.availableTextWidth)
     await page.getByRole('region', { name: 'Scrollable activity list' }).focus()
     await expect(page.getByRole('region', { name: 'Scrollable activity list' })).toBeFocused()
   })
 }
 
-test('long unrecognized activity types still wrap inside bounded badges', async ({ page }) => {
+test('long unrecognized activity types remain available in bounded inline selectors', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 900 })
   await page.goto('./')
   const type = 'X'.repeat(200)
   await selectZip(page, await zip([['long-type.gpx', route('Long type', ['0', '10'], type)]]))
   await expectLoaded(page, 1)
   const label = page.locator('.type-label')
-  await expect(label).toHaveText(type)
+  await expect(label.locator('option:checked')).toHaveText(type)
+  await expect(label).toHaveAttribute('title', type)
+  await label.focus()
+  await expect(label.locator('option:checked')).toHaveText(type)
   expect(await label.evaluate((element) => element.getBoundingClientRect().width)).toBeLessThanOrEqual(180)
   expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

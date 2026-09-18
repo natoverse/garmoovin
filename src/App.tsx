@@ -229,6 +229,8 @@ export default function App() {
             {list.map((activity) => {
               const group = groupById.get(activity.id)
               const garminActivityId = candidateActivityId(activity.sourceFile)
+              const startingType = activityTypeKey(activity.type)
+              const typeDraft = typeDrafts.get(activity.id)
               return (
                 <tr key={activity.id} data-route-group={group?.members[0]}>
                   <td className="route-cell"><RouteThumbnail thumbnail={activity.thumbnail} name={activity.name} /></td>
@@ -278,22 +280,29 @@ export default function App() {
                     {group && group.status !== 'matched' && <p className="similarity-status">{groupLabel(group)}</p>}
                   </td>
                   <td>
-                    <span className="type-label" title="Starting activity type">{activity.type}</span>
                     <select
-                      className="activity-type"
+                      className="type-label activity-type"
+                      title={typeDraft ? activityTypeLabel(typeDraft) : activity.type}
                       aria-label={`Activity type for ${activity.name} (${activity.sourceFile})`}
                       aria-describedby="type-edit-help"
-                      value={typeDrafts.get(activity.id) ?? ''}
+                      value={typeDraft ?? startingType}
                       onPointerDown={() => setEditingType(activity.id)}
                       onFocus={() => setEditingType(activity.id)}
                       onBlur={() => setEditingType(null)}
                       onChange={(event) => editType(activity.id,
-                        !event.currentTarget.value || event.currentTarget.value === activityTypeKey(activity.type)
-                          ? null : event.currentTarget.value)}
+                        event.currentTarget.value === startingType ? null : event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing) return
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          editType(activity.id, null)
+                          event.currentTarget.blur()
+                        }
+                      }}
                     >
-                      <option value="">Keep {activity.type}</option>
-                      {editableTypes.filter((key) => key !== activityTypeKey(activity.type)
-                        && (editingType === activity.id || key === typeDrafts.get(activity.id))).map((key) => (
+                      <option value={startingType}>{activity.type}</option>
+                      {editableTypes.filter((key) => key !== startingType
+                        && (editingType === activity.id || key === typeDraft)).map((key) => (
                         <option key={key} value={key}>{activityTypeLabel(key)}</option>
                       ))}
                     </select>
@@ -444,7 +453,7 @@ export default function App() {
                 <h2>Proposed activity changes</h2>
                 <p>Edit activity titles and types. Save exports all proposals, including hidden rows; search still uses starting titles.</p>
                 <p id="title-edit-help">Press Escape to restore the imported title. Leaving a blank title also restores it; Enter finishes editing.</p>
-                <p id="type-edit-help">Choose a type such as Trail Running, or Keep to discard the type edit. Filters use starting types until the next import.</p>
+                <p id="type-edit-help">Click or tab into the type tag to choose a new type. Choose the starting type or press Escape with the menu closed to discard the type edit. Filters use starting types until the next import.</p>
                 <p>This website never connects to Garmin. Download the JSON and use the separate Python CLI to review and apply it locally.</p>
               </div>
               <button type="button" className="primary-button" disabled={saving || loading || changes.length === 0 || hasBlockedChanges} onClick={saveTitles}>
