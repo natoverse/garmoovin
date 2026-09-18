@@ -367,6 +367,70 @@ test('persisted distances work at different tolerances without turning a loose m
   await expect(page.locator('.cache-summary')).toHaveAttribute('data-compared', '0')
 })
 
+test('legacy strict-only pairs gain area coverage without losing saved titles or reprocessing GPX', async ({ page }) => {
+  await probe(page)
+  await page.goto('./')
+  const degrees = 180 / Math.PI / 6_371_008.8
+  const line = (name: string, length: number, day: number) => gpx(`<trk><name>${name}</name><type>hiking</type><trkseg>
+    <trkpt lat="0" lon="0"><time>2025-01-0${day}T00:00:00Z</time></trkpt>
+    <trkpt lat="0" lon="${length * degrees}"/>
+  </trkseg></trk>`)
+  const archive = await zip([
+    ['garmin-1.gpx', line('Full trail', 1000, 2)],
+    ['garmin-2.gpx', line('Shortcut', 800, 1)],
+  ])
+  await selectZip(page, archive)
+  await expectLoaded(page, 2)
+  await group(page)
+  await page.locator('.activity-name[title="garmin-2.gpx"]').fill('Saved shortcut')
+  const downloading = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save JSON (1)' }).click()
+  await downloading
+  await expect(page.locator('.export-notice')).toContainText('Exported titles will be the starting titles')
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open('groomin-activities', 1)
+      request.onsuccess = () => resolve(request.result)
+    })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('pairs', 'readwrite')
+        const store = tx.objectStore('pairs')
+        const request = store.get(['1', '2'])
+        request.onsuccess = () => {
+          const pair = request.result as { ids: string[]; score: number; areaD70?: number }
+          delete pair.areaD70
+          store.put(pair, pair.ids)
+        }
+        tx.oncomplete = () => resolve()
+        tx.onabort = () => reject(tx.error)
+      })
+    } finally { db.close() }
+  })
+  await page.reload()
+  await selectZip(page, archive)
+  await expectLoaded(page, 2)
+  await expectActivityNames(page, ['Full trail', 'Saved shortcut'])
+  await expect(page.locator('.cache-summary')).toHaveText('2 from cache · 0 processed')
+  await page.getByRole('combobox', { name: 'Match by' }).selectOption('route')
+  await group(page)
+  await expect(page.locator('.route-bundle')).toHaveCount(0)
+  await expect(page.locator('.cache-summary')).toHaveAttribute('data-compared', '0')
+  await page.getByRole('combobox', { name: 'Match by' }).selectOption('area')
+  await expect(page.locator('.similarity-count')).not.toContainText('Analysis pending')
+  await expect(page.locator('.route-bundle')).toHaveCount(1)
+  await expect(page.locator('.cache-summary')).toHaveAttribute('data-compared', '1')
+  expect(await page.evaluate(() => window.cacheProbe)).toMatchObject({ parses: 0, hashes: 0, renders: 0 })
+  await page.reload()
+  await selectZip(page, archive)
+  await expectLoaded(page, 2)
+  await group(page)
+  await expect(page.locator('.route-bundle')).toHaveCount(1)
+  await expect(page.locator('.cache-summary')).toHaveAttribute('data-compared', '0')
+  await expectActivityNames(page, ['Full trail', 'Saved shortcut'])
+  await expect(page.locator('.cache-warning')).toHaveCount(0)
+})
+
 for (const invalid of ['profile', 'geometry', 'version', 'pair', 'area-pair']) {
   test(`invalid cached ${invalid} is reported and rebuilt rather than hiding activities`, async ({ page }) => {
     await page.goto('./')

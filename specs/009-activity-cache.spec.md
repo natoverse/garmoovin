@@ -89,3 +89,9 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 - Cache elapsed duration in milliseconds (or `null` when unavailable) as activity metadata, preserving the parse-free warm path.
 - Retain database version 1 and accept older records without duration. On their next import, extract and parse just those GPX entries to backfill duration, while preserving cached titles, types, dates, previews, geometry, and pair scores. Count these entries as processed rather than full cache hits.
 - A completed backfill stores the new field, including unavailable durations, so later imports do not repeat parsing. Existing cancellation, cache-clearing, validation, and storage-failure behavior still applies.
+
+## Same-area comparison iteration (2026-09-18)
+
+- Spec 006 adds D70 coverage and a length-weighted geographic-center safeguard alongside strict D95 matching. Extend pair records with optional numeric `areaD70`, measured in meters like the existing `score` (D95); validate both distances before reuse.
+- Keep the database and prepared-geometry versions unchanged. Old pairs without D70 remain valid for strict matching; when area matching needs them, compute both percentiles using the restored spatial tree and overwrite just that pair record. No activity cache clearing, GPX parsing, preview rebuilding, or loss of remembered titles is needed.
+- Compute geographic centers/radii lazily from cached weighted samples and retain them in session memory, not as new required activity fields. Fresh and upgraded pair scores work across modes and feet-based tolerance changes. Cache-generation checks and cancellation continue to prevent stale writes.

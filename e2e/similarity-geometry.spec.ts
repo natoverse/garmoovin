@@ -201,6 +201,22 @@ test('area centers and coverage are length-weighted rather than biased by dense 
   expect(await matches(disconnected, line(), 50, 'area')).toBe(false)
 })
 
+test('area variants still require every pair to match instead of chaining overlapping routes', async () => {
+  const session = new SimilaritySession()
+  try {
+    const activities = []
+    for (const [id, halfLength, date] of [['a', 500, 3], ['b', 400, 2], ['c', 300, 1]] as const) {
+      activities.push(activity(id, await ready(session, route([[-halfLength, 0], [halfLength, 0]])), date))
+    }
+    expect(await session.group(activities, 75, signal(), 'area')).toEqual([
+      { members: ['a', 'b'], status: 'matched' }, { members: ['c'], status: 'unmatched' },
+    ])
+    expect(await session.group(activities.slice(1), 75, signal(), 'area')).toEqual([
+      { members: ['b', 'c'], status: 'matched' },
+    ])
+  } finally { session.dispose() }
+})
+
 test('native feet thresholds control matching rather than retaining the previous metric thresholds', async () => {
   const session = new SimilaritySession()
   try {
