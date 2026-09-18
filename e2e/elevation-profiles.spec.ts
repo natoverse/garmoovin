@@ -350,15 +350,16 @@ for (const { width, widerFont } of [320, 600, 601, 768, 1440].flatMap((width) =>
       const context = document.createElement('canvas').getContext('2d')!
       context.font = style.font
       context.letterSpacing = style.letterSpacing
+      const text = context.measureText(element.selectedOptions[0]!.textContent ?? '')
       return {
         height: element.clientHeight,
         oneLineHeight: Math.ceil(Math.max(
           parseFloat(style.minHeight) - parseFloat(style.borderTopWidth) - parseFloat(style.borderBottomWidth),
-          parseFloat(style.lineHeight) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+          text.fontBoundingBoxAscent + text.fontBoundingBoxDescent + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
         )),
         width: element.clientWidth,
         font: style.fontFamily,
-        textWidth: context.measureText(element.selectedOptions[0]!.textContent ?? '').width,
+        textWidth: text.width,
         availableTextWidth: element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 20,
       }
     })
