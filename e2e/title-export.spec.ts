@@ -134,6 +134,178 @@ async function installProbe(page: Page) {
   })
 }
 
+const selectionHeader = (page: Page) => page.getByRole('region', { name: 'Activity selection', exact: true })
+const bulkTitle = (page: Page) => page.getByRole('textbox', { name: 'Title for selected activities', exact: true })
+const bulkType = (page: Page) => page.getByRole('combobox', { name: 'Type for selected activities', exact: true })
+const selectAllActivities = (page: Page) => page.getByRole('button', { name: 'Select all shown activities', exact: true })
+const selectNoActivities = (page: Page) => page.getByRole('button', { name: 'Select none of the activities', exact: true })
+const selectActivity = (page: Page, path = 'nested/garmin-1.gpx', name = 'Green Mountain') =>
+  page.getByRole('checkbox', { name: `Select ${name} (${path})`, exact: true })
+
+test('activity selection supports keyboard checkboxes, filtered select all, and clearing hidden selections', async ({ page }) => {
+  await setup(page)
+  await expect(page.locator('tbody input[type=checkbox]')).toHaveCount(3)
+  await expect(selectionHeader(page)).toContainText('0 selected')
+  await expect(bulkTitle(page)).toHaveCount(0)
+  await expect(selectNoActivities(page)).toBeDisabled()
+  await selectActivity(page).focus()
+  await selectActivity(page).press('Space')
+  await expect(selectActivity(page)).toBeChecked()
+  await expect(selectionHeader(page)).toContainText('1 selected')
+  await expect(bulkTitle(page)).toHaveCount(0)
+  await page.getByRole('searchbox').fill('Riverside')
+  await selectAllActivities(page).click()
+  await expect(selectionHeader(page)).toContainText('2 selected · 1 hidden by filters')
+  await expect(bulkTitle(page)).toHaveValue('')
+  await expect(bulkTitle(page)).toHaveAttribute('placeholder', 'Mixed titles')
+  await expect(bulkType(page)).toHaveValue('')
+  await bulkTitle(page).focus()
+  await bulkType(page).focus()
+  await expect(saveButton(page)).toBeDisabled()
+  await page.getByRole('searchbox').fill('')
+  await expect(selectActivity(page, 'other/garmin-2.gpx')).not.toBeChecked()
+  await selectAllActivities(page).click()
+  await expect(page.locator('tbody input[type=checkbox]:checked')).toHaveCount(3)
+  await page.getByRole('button', { name: 'Select none', exact: true }).click()
+  await expect(selectionHeader(page)).toContainText('3 selected · 3 hidden by filters')
+  await expect(selectAllActivities(page)).toBeDisabled()
+  await selectNoActivities(page).click()
+  await expect(selectionHeader(page)).toContainText('0 selected')
+  await expect(bulkTitle(page)).toHaveCount(0)
+  await page.getByRole('button', { name: 'Select all', exact: true }).click()
+  await expect(page.locator('tbody input[type=checkbox]:checked')).toHaveCount(0)
+  await expect(saveButton(page)).toBeDisabled()
+})
+
+for (const grouped of [false, true]) {
+  test(`bulk edits affect selected rows only and export hidden combined proposals${grouped ? ' across route bundles' : ''}`, async ({ page }) => {
+    const archive = await setup(page, await zip(files.map(([path, contents]) => [
+      path, contents.replace('</trkseg>', '<trkpt lat="0" lon="0.01"></trkpt></trkseg>'),
+    ])))
+    const requests: string[] = []
+    page.on('request', (request) => { if (/^https?:/.test(request.url())) requests.push(request.url()) })
+    await selectActivity(page).check()
+    await selectActivity(page, 'other/garmin-2.gpx').check()
+    await expect(bulkTitle(page)).toHaveValue('Green Mountain')
+    await expect(bulkType(page)).toHaveValue('')
+    if (grouped) {
+      await page.getByRole('checkbox', { name: 'Group similar routes' }).check()
+      await expect(page.locator('.route-bundle')).toHaveCount(1)
+      await expect(page.locator('tbody input[type=checkbox]:checked')).toHaveCount(2)
+    }
+    await bulkType(page).selectOption('trail_running')
+    await expect(title(page)).toHaveValue('Green Mountain')
+    await expect(saveButton(page)).toHaveText('Save JSON (2)')
+    await page.getByRole('button', { name: 'Hiking', exact: true }).click()
+    await expect(selectionHeader(page)).toContainText('2 selected · 1 hidden by filters')
+    await bulkTitle(page).fill('  Shared trail  ')
+    await bulkTitle(page).press('Enter')
+    await expect(bulkTitle(page)).not.toBeFocused()
+    await expect(title(page, 'other/garmin-2.gpx')).toHaveValue('  Shared trail  ')
+    await expect(title(page, 'garmin-3.gpx', 'Riverside Ride')).toHaveValue('Riverside Ride')
+    await expect(typeEditor(page, 'garmin-3.gpx', 'Riverside Ride')).toHaveValue('cycling')
+    await expect(typeEditor(page)).toHaveValue('trail_running')
+    const expected = {
+      ...mapping(archive, [
+        { ...change('Shared trail'), newActivityType: 'trail_running' },
+        { ...change('Shared trail', 'other/garmin-2.gpx'), newActivityType: 'trail_running' },
+      ]),
+      schemaVersion: 3,
+    }
+    expect(await save(page)).toEqual(expected)
+    expect(await save(page)).toEqual(expected)
+    expect(await cachedTitle(page)).toBe('Shared trail')
+    expect(await cachedTitle(page, '1', 'type')).toBe('Trail Running')
+    expect(await cachedTitle(page, '3')).toBe('Riverside Ride')
+    await title(page, 'other/garmin-2.gpx').fill('Individual override')
+    await expect(bulkTitle(page)).toHaveValue('')
+    await bulkTitle(page).focus()
+    await bulkType(page).focus()
+    await expect(title(page, 'other/garmin-2.gpx')).toHaveValue('Individual override')
+    await selectNoActivities(page).click()
+    await expect(saveButton(page)).toHaveText('Save JSON (2)')
+    await page.getByRole('button', { name: 'Hiking', exact: true }).click()
+    await expect(title(page)).toHaveValue('  Shared trail  ')
+    expect(requests).toEqual([])
+  })
+}
+
+test('bulk title/type resets are independent and composition keys leave titles intact', async ({ page }) => {
+  await setup(page)
+  await selectAllActivities(page).click()
+  await bulkType(page).selectOption('running')
+  await expect(saveButton(page)).toHaveText('Save JSON (2)')
+  await bulkTitle(page).fill('Shared title')
+  for (const key of ['Enter', 'Escape']) {
+    await bulkTitle(page).evaluate((input, key) => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, isComposing: true }))
+    }, key)
+    await expect(bulkTitle(page)).toBeFocused()
+    await expect(bulkTitle(page)).toHaveValue('Shared title')
+  }
+  await expect(saveButton(page)).toHaveText('Save JSON (3)')
+  await bulkType(page).focus()
+  await bulkType(page).press('Escape')
+  await expect(bulkType(page)).toHaveValue('')
+  await expect(bulkTitle(page)).toHaveValue('Shared title')
+  await expect(typeEditor(page)).toHaveValue('running')
+  await expect(typeEditor(page, 'nested/garmin-1.gpx')).toHaveValue('hiking')
+  await bulkTitle(page).press('Escape')
+  await expectActivityNames(page, ['Green Mountain', 'Green Mountain', 'Riverside Ride'])
+  await expect(saveButton(page)).toBeDisabled()
+  for (const value of ['', '   ']) {
+    await bulkTitle(page).fill('Temporary')
+    await bulkTitle(page).fill(value)
+    await expect(saveButton(page)).toBeDisabled()
+    await bulkTitle(page).press('Tab')
+    await expectActivityNames(page, ['Green Mountain', 'Green Mountain', 'Riverside Ride'])
+  }
+  await bulkTitle(page).fill('Green Mountain')
+  await expect(saveButton(page)).toHaveText('Save JSON (1)')
+})
+
+test('bulk title-only edits retain schema 2, discard warnings, and archive-scoped selection', async ({ page }) => {
+  const archive = await setup(page)
+  await page.getByRole('searchbox').fill('Green')
+  await selectAllActivities(page).click()
+  await bulkTitle(page).fill('Shared title')
+  const replacement = await zip([['garmin-10.gpx', gpx(track('Replacement', 'hiking', '2025-01-01T00:00:00Z'))]])
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await selectZip(page, replacement)
+  await expect(selectionHeader(page)).toContainText('2 selected')
+  await expect(bulkTitle(page)).toHaveValue('Shared title')
+  expect(await save(page)).toEqual(mapping(archive, [change('Shared title'), change('Shared title', 'other/garmin-2.gpx')]))
+  await bulkTitle(page).fill('Later unsaved title')
+  page.once('dialog', (dialog) => dialog.accept())
+  await selectZip(page, replacement)
+  await expectLoaded(page, 1)
+  await expect(selectionHeader(page)).toContainText('0 selected')
+  await expect(bulkTitle(page)).toHaveCount(0)
+  await expect(saveButton(page)).toBeDisabled()
+})
+
+test('bulk selection includes unexportable activities without bypassing identity checks', async ({ page }) => {
+  await setup(page, await zip([...files, ['missing-id.gpx', gpx(track('No ID', 'running', '2025-01-01T00:00:00Z'))]]), 4)
+  await selectAllActivities(page).click()
+  await bulkType(page).selectOption('trail_running')
+  await expect(saveButton(page)).toHaveText('Save JSON (4)')
+  await expect(saveButton(page)).toBeDisabled()
+  await expect(page.locator('.export-error')).toContainText('No partial file will be exported')
+  await selectNoActivities(page).click()
+  await expect(saveButton(page)).toBeDisabled()
+})
+
+test('bulk controls fit a narrow viewport and row options stay lazy', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 })
+  await setup(page)
+  await selectAllActivities(page).click()
+  await bulkType(page).selectOption('trail_running')
+  await expect(page.locator('.activity-type option')).toHaveCount(6)
+  await expect(bulkTitle(page)).toBeVisible()
+  await expect(bulkType(page)).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
 test('type drafts include new categories, remain independent of titles, and can be discarded', async ({ page }) => {
   await setup(page)
   await expect(typeEditor(page)).toHaveValue('running')
@@ -376,7 +548,7 @@ test('starts with prefilled inline titles and ignores blank or unchanged proposa
   await setup(page)
   await expect(page.getByRole('textbox')).toHaveCount(3)
   await expectActivityNames(page, ['Green Mountain', 'Green Mountain', 'Riverside Ride'])
-  await expect(page.getByRole('columnheader')).toHaveText(['Route', 'Elevation', 'Title', 'Type', 'Date (UTC)'])
+  await expect(page.getByRole('columnheader')).toHaveText(['Select', 'Route', 'Elevation', 'Title', 'Type', 'Date (UTC)'])
   for (const value of ['', '   ', 'Green Mountain', '  Green Mountain  ']) {
     await title(page).fill(value)
     await expect(saveButton(page)).toHaveText('Save JSON (0)')
