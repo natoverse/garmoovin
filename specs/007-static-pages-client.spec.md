@@ -64,3 +64,10 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 
 - Spec 001 adds explicit links to Garmin Connect activity detail pages. These open Garmin's website in a separate tab only when activated, without opener access or a referrer; Garmin handles any required login.
 - The no-Garmin-access boundary still prohibits API calls, automatic lookups, authentication, and credentials in the viewer. External navigation sends only the filename-derived activity ID in the URL, not archive contents or draft titles, and does not change the standalone writer or JSON contract.
+
+## Activity edit contract decisions (2026-09-18)
+
+- Preserve schema 2 unchanged for title-only exports and backwards-compatible CLI input. Use schema 3 whenever the snapshot includes any type change.
+- Schema 3 retains the same top-level fields and required per-change identity fields: `sourceFile`, `garminActivityId`, `recordedStartTime`, `activityType`, and `originalTitle`. `activityType` is the starting type, never the proposed type.
+- Each schema-3 change contains optional `newTitle` and/or `newActivityType`, with at least one effective change. Omit unchanged fields, never emit null. `newTitle` follows the existing trimmed/nonempty/changed rule. `newActivityType` is a canonical lowercase Garmin type key (for example `trail_running`), matching `[a-z][a-z0-9_]*`, not `unknown`, and different from the normalized starting type.
+- Retain strict unknown/duplicate-field rejection, full source and duplicate-target checks, and the 1 MiB limit. The writer resolves type keys to Garmin catalog IDs; the browser neither guesses numerical type IDs nor fetches the catalog.

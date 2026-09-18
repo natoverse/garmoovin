@@ -77,3 +77,12 @@ Report results per activity rather than presenting a partially successful batch 
 - Blank or unrecognized confirmation input re-prompts instead of exiting. This prevents a queued newline from returning the user to the shell before they can type `APPLY`.
 - Only exact uppercase `APPLY` authorizes the displayed batch. Exact uppercase `CANCEL` exits without writes; Ctrl+C and end-of-input still interrupt. No REPL or unattended approval mode is introduced.
 - The shared confirmation behavior applies to both `apply` and `reconcile --apply`; all account, identity, conflict, journal, and read-back checks remain unchanged.
+
+## Activity type editing decisions (2026-09-18)
+
+- Extend the standalone writer to accept spec 007's schema 3 as well as existing schema 2. Support type-only and combined edits without changing fields omitted from the proposal.
+- Resolve proposed type keys through the authenticated Garmin activity-type catalog during read-only review. Reject missing or ambiguous catalog entries; bind the resolved type ID, key, and parent ID to the reviewed, journaled batch. Use the pinned library's `set_activity_type` rather than assuming IDs.
+- Review starting/current/proposed titles and types. Retain owned-account membership, exact activity ID, and start-time verification. A type-edit target may match either its starting type or its proposed type, to permit idempotent retry after success; unrelated types remain blocked. Title-only proposals retain strict original-type identity checks.
+- Re-read remote state before each mutation. Changes since review conflict; fields already at their requested values are not replayed. Journal before every possible mutation and verify read-back of every requested field before reporting confirmation.
+- Combined edits are not atomic in Garmin. Persist and reconcile partial completion, preserve unrequested fields, and require a fresh review/confirmation before completing remaining work. Authentication failure, rate limits, uncertainty, and overlapping-writer safeguards remain unchanged. Legacy title-only journals must remain recoverable.
+- Preserve completed-field history even when a reconciliation read fails for that row and another eligible row is applied. A blocked row carried into a new journal must not lose the evidence that prevents replaying its completed fields over later external edits.

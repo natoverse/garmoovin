@@ -9,6 +9,7 @@ import { ActivityCache } from './activity-cache'
 import { candidateActivityId, createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
 import { useSimilarity } from './use-similarity'
 import { formatFeet } from './units'
+import { activityTypeKey, activityTypeLabel, activityTypeOptions } from './activity-types'
 import logo from './assets/groomin-logo.jpg'
 import './theme.css'
 import './App.css'
@@ -29,6 +30,8 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [typeSelection, setTypeSelection] = useState<TypeSelection>({ defaultSelected: true, exceptions: new Set() })
   const [drafts, setDrafts] = useState<Map<string, string>>(() => new Map())
+  const [typeDrafts, setTypeDrafts] = useState<Map<string, string>>(() => new Map())
+  const [editingType, setEditingType] = useState<string | null>(null)
   const [lastExportSignature, setLastExportSignature] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [exportNotice, setExportNotice] = useState<{ error: boolean; message: string } | null>(null)
@@ -57,7 +60,7 @@ export default function App() {
       setExportNotice({ error: true, message: 'Wait for the JSON export to finish before opening another archive.' })
       return
     }
-    if (hasUnexportedChanges && !window.confirm('You have title changes that are not in the latest JSON export. Discard these drafts and open another archive?')) return
+    if (hasUnexportedChanges && !window.confirm('You have activity changes that are not in the latest JSON export. Discard these drafts and open another archive?')) return
 
     currentImport.current?.abort()
     similarity.current?.dispose()
@@ -70,6 +73,8 @@ export default function App() {
     if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current)
     downloadUrl.current = null
     setDrafts(new Map())
+    setTypeDrafts(new Map())
+    setEditingType(null)
     setLastExportSignature(null)
     setExportNotice(null)
     setSearch('')
@@ -102,11 +107,20 @@ export default function App() {
     })
   }
 
+  function editType(id: string, value: string | null) {
+    setTypeDrafts((current) => {
+      const next = new Map(current)
+      if (value === null) next.delete(id)
+      else next.set(id, value)
+      return next
+    })
+  }
+
   async function saveTitles() {
     if (saving) return
     const file = archiveFile.current
     if (!file || state.phase !== 'complete') {
-      setExportNotice({ error: true, message: 'Finish opening an archive before exporting title changes.' })
+      setExportNotice({ error: true, message: 'Finish opening an archive before exporting activity changes.' })
       return
     }
     const snapshot = changes
@@ -122,17 +136,24 @@ export default function App() {
       const url = requestTitleMappingDownload(mapping)
       if (downloadUrl.current) URL.revokeObjectURL(downloadUrl.current)
       downloadUrl.current = url
-      const remembered = await cache.writeTitles(
-        new Map(mapping.changes.map((change) => [change.garminActivityId, change.newTitle])),
+      const remembered = await cache.writeEdits(
+        new Map(mapping.changes.map((change) => [change.garminActivityId, {
+          ...(change.newTitle !== undefined ? { name: change.newTitle } : {}),
+          ...(change.newActivityType !== undefined ? { type: activityTypeLabel(change.newActivityType) } : {}),
+        }])),
         cacheGeneration,
       )
+      const fields = mapping.schemaVersion === 3 ? 'titles and types' : 'titles'
+      const countLabel = mapping.schemaVersion === 3
+        ? `${snapshot.length} ${snapshot.length === 1 ? 'activity' : 'activities'}`
+        : `${snapshot.length} ${snapshot.length === 1 ? 'rename' : 'renames'}`
       setLastExportSignature(snapshotSignature)
       setExportNotice({
         error: !remembered,
-        message: `JSON download requested for ${snapshot.length} ${snapshot.length === 1 ? 'rename' : 'renames'}. Check your browser's downloads; no changes were sent to Garmin. ${
+        message: `JSON download requested for ${countLabel}. Check your browser's downloads; no changes were sent to Garmin. ${
           remembered
-            ? 'Exported titles will be the starting titles on your next load.'
-            : 'Some exported titles could not be remembered for your next load.'
+            ? `Exported ${fields} will be the starting ${fields} on your next load.`
+            : `Some exported ${fields} could not be remembered for your next load.`
         }`,
       })
     } catch (error) {
@@ -166,6 +187,7 @@ export default function App() {
   const progress = state.phase === 'loading' || state.phase === 'complete' ? state.progress : null
   const activities = progress?.activities ?? []
   const activityTypes = Array.from(new Set(activities.map((activity) => activity.type))).sort()
+  const editableTypes = activityTypeOptions(activityTypes)
   const isTypeSelected = (type: string) => typeSelection.defaultSelected !== typeSelection.exceptions.has(type)
   const selectedTypeCount = activityTypes.filter(isTypeSelected).length
   const query = search.trim().toLowerCase()
@@ -174,7 +196,7 @@ export default function App() {
   )
   const issues = progress?.issues ?? []
   const loading = state.phase === 'loading'
-  const changes = pendingTitleChanges(activities, drafts)
+  const changes = pendingTitleChanges(activities, drafts, typeDrafts)
   const changesSignature = JSON.stringify(changes)
   const hasUnexportedChanges = changes.length > 0 && changesSignature !== lastExportSignature
   const duplicateSourceFiles = new Set(progress?.duplicateSourceFiles ?? [])
@@ -255,7 +277,27 @@ export default function App() {
                     <ElevationStats profile={activity.elevation} />
                     {group && group.status !== 'matched' && <p className="similarity-status">{groupLabel(group)}</p>}
                   </td>
-                  <td><span className="type-label">{activity.type}</span></td>
+                  <td>
+                    <span className="type-label" title="Starting activity type">{activity.type}</span>
+                    <select
+                      className="activity-type"
+                      aria-label={`Activity type for ${activity.name} (${activity.sourceFile})`}
+                      aria-describedby="type-edit-help"
+                      value={typeDrafts.get(activity.id) ?? ''}
+                      onPointerDown={() => setEditingType(activity.id)}
+                      onFocus={() => setEditingType(activity.id)}
+                      onBlur={() => setEditingType(null)}
+                      onChange={(event) => editType(activity.id,
+                        !event.currentTarget.value || event.currentTarget.value === activityTypeKey(activity.type)
+                          ? null : event.currentTarget.value)}
+                    >
+                      <option value="">Keep {activity.type}</option>
+                      {editableTypes.filter((key) => key !== activityTypeKey(activity.type)
+                        && (editingType === activity.id || key === typeDrafts.get(activity.id))).map((key) => (
+                        <option key={key} value={key}>{activityTypeLabel(key)}</option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="activity-date">
                     <div className="activity-timestamp">{activity.date === null ? 'Unknown' : (
                       <time dateTime={new Date(activity.date).toISOString()}>{formatDate(activity.date)}</time>
@@ -278,7 +320,7 @@ export default function App() {
     if (!hasUnexportedChanges) return
     const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
       event.preventDefault()
-      event.returnValue = 'You have unexported title changes.'
+      event.returnValue = 'You have unexported activity changes.'
     }
     window.addEventListener('beforeunload', warnBeforeLeaving)
     return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
@@ -301,7 +343,7 @@ export default function App() {
           <h2 id="import-heading">Open your Garmin archive</h2>
           <p>Select a GPX ZIP to browse routes, elevation profiles, activity names, types, and recorded dates.</p>
           <p className="privacy-note">Read in your browser. Nothing uploaded, no Garmin login.</p>
-          <p className="privacy-note">Activity metadata, including titles from Save JSON, route images, elevation profiles, and location-bearing comparison data are cached on this device. Source files and unsaved title drafts are not saved.</p>
+          <p className="privacy-note">Activity metadata, including titles and types from Save JSON, route images, elevation profiles, and location-bearing comparison data are cached on this device. Source files and unsaved drafts are not saved.</p>
         </div>
         <label className="file-picker">
           <span>{state.phase === 'idle' ? 'Open GPX ZIP' : 'Choose another ZIP'}</span>
@@ -317,7 +359,7 @@ export default function App() {
           {clearingCache ? 'Clearing cache...' : 'Clear activity cache'}
         </button>
       </div>
-      <p className="cache-help">Cached activities are reused by Garmin ID. Save JSON remembers the exported titles for your next load; unsaved drafts are not stored. Clear the cache and reopen the archive to read titles changed elsewhere or updated GPX data.</p>
+      <p className="cache-help">Cached activities are reused by Garmin ID. Save JSON remembers the exported titles and types for your next load; unsaved drafts are not stored. Clear the cache and reopen the archive to read metadata changed elsewhere or updated GPX data.</p>
       {progress && (
         <p className="cache-summary"
           data-extracted={progress.extracted}
@@ -399,9 +441,10 @@ export default function App() {
           <div className="title-export-panel">
             <div className="export-toolbar">
               <div>
-                <h2>Proposed title changes</h2>
-                <p>Edit activity titles in place. Save exports all proposals, including hidden rows; search still uses imported titles.</p>
+                <h2>Proposed activity changes</h2>
+                <p>Edit activity titles and types. Save exports all proposals, including hidden rows; search still uses starting titles.</p>
                 <p id="title-edit-help">Press Escape to restore the imported title. Leaving a blank title also restores it; Enter finishes editing.</p>
+                <p id="type-edit-help">Choose a type such as Trail Running, or Keep to discard the type edit. Filters use starting types until the next import.</p>
                 <p>This website never connects to Garmin. Download the JSON and use the separate Python CLI to review and apply it locally.</p>
               </div>
               <button type="button" className="primary-button" disabled={saving || loading || changes.length === 0 || hasBlockedChanges} onClick={saveTitles}>
@@ -409,10 +452,10 @@ export default function App() {
               </button>
             </div>
             <p className="draft-status" aria-live="polite">
-              {loading ? 'You can draft titles now. Export is available once the archive finishes loading.'
-                : hasUnexportedChanges ? 'There are title changes not included in the latest JSON export.'
+              {loading ? 'You can draft titles and types now. Export is available once the archive finishes loading.'
+                : hasUnexportedChanges ? 'There are activity changes not included in the latest JSON export.'
                 : changes.length > 0 ? 'Current proposals match the latest requested export. Drafts remain editable.'
-                : 'Edit a title to propose a rename. No changes are made to Garmin.'}
+                : 'Edit a title or type to propose a change. No changes are made to Garmin.'}
             </p>
             {hasBlockedChanges && <div className="export-error" role="alert">
               <p>Some proposals lack valid identity evidence or have duplicate GPX paths. Clear or correct those proposals before saving. No partial file will be exported.</p>

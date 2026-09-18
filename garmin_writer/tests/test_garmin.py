@@ -1,21 +1,23 @@
 import contextlib
 import io
 import os
-import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import requests
+from garminconnect import Garmin
 
 from garmin_writer import auth
 from garmin_writer.garmin import GarminAdapter, GarminError
+from garmin_writer.models import ActivityType
+from garmin_writer.tests.helpers import private_test_directory
 
 
 class AdapterTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = self.enterContext(private_test_directory())
         self.path = Path(self.temp.name).resolve()
         token = self.path / "garmin_tokens.json"
         token.write_text("{}")
@@ -45,6 +47,43 @@ class AdapterTests(unittest.TestCase):
             self.adapter.read("2", "2025-01-01T00:00:00Z")
         self.api.get_activity.assert_called_once_with("1")
         self.api.get_activities_by_date.assert_called_once_with("2024-12-31", "2025-01-02")
+
+    def test_activity_type_catalog_and_exact_mutation_arguments(self):
+        self.adapter.api = self.api
+        entry = {"typeId": 6, "typeKey": "trail_running", "parentTypeId": 1}
+        self.api.get_activity_types.return_value = [entry]
+        self.assertEqual(self.adapter.activity_types(), [entry])
+        self.api.get_activity_types.assert_called_once_with()
+        self.adapter.set_type("42", ActivityType(**entry))
+        self.api.set_activity_type.assert_called_once_with("42", 6, "trail_running", 1)
+        self.api.set_activity_name.assert_not_called()
+
+    def test_pinned_library_type_payload_does_not_include_activity_name(self):
+        api = Garmin(retry_attempts=0)
+        api.client = MagicMock()
+        self.adapter.api = api
+        self.adapter.set_type("42", ActivityType(typeId=6, typeKey="trail_running", parentTypeId=1))
+        api.client.put.assert_called_once_with(
+            "connectapi", f"{api.garmin_connect_activity}/42",
+            json={"activityId": "42", "activityTypeDTO": {"typeId": 6, "typeKey": "trail_running", "parentTypeId": 1}},
+            api=True,
+        )
+
+    def test_malformed_catalogs_and_unauthenticated_type_operations_fail(self):
+        activity_type = ActivityType(typeId=6, typeKey="trail_running", parentTypeId=1)
+        with self.assertRaises(GarminError):
+            self.adapter.activity_types()
+        with self.assertRaises(GarminError):
+            self.adapter.set_type("42", activity_type)
+        self.adapter.api = self.api
+        for value in (None, {}, {"types": []}, ["trail_running"], [None]):
+            with self.subTest(value=value), self.assertRaises(GarminError):
+                self.api.get_activity_types.return_value = value
+                self.adapter.activity_types()
+        self.api.get_activity_types.side_effect = ValueError("synthetic-secret")
+        with self.assertRaises(GarminError) as captured:
+            self.adapter.activity_types()
+        self.assertNotIn("synthetic-secret", str(captured.exception))
 
     def test_unsafe_token_permissions_and_errors_do_not_leak_credentials(self):
         (self.path / "garmin_tokens.json").chmod(0o644)

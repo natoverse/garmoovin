@@ -2,7 +2,6 @@ import contextlib
 import io
 import json
 import os
-import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -11,7 +10,7 @@ from unittest.mock import patch
 from garmin_writer.__main__ import main
 from garmin_writer.garmin import GarminError
 from garmin_writer.mapping import load_mapping
-from garmin_writer.tests.helpers import FakeGarmin
+from garmin_writer.tests.helpers import FakeGarmin, private_test_directory
 
 
 FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "title-mapping-v2.json"
@@ -19,7 +18,7 @@ FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "title-mapping-v2.j
 
 class CliTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = self.enterContext(private_test_directory())
         self.root = Path(self.temp.name).resolve()
         self.tokens = self.root / "tokens"
         self.tokens.mkdir(mode=0o700)
@@ -166,3 +165,68 @@ class CliTests(unittest.TestCase):
             self.assertEqual(self.run_cli(["review", str(self.mapping)]), 2)
         self.assertNotIn("synthetic-secret-token", self.errors.getvalue())
         self.assertIn("Details withheld", self.errors.getvalue())
+
+    def use_type_fixture(self):
+        self.data = json.loads((FIXTURE.parent / "activity-mapping-v3.json").read_text())
+        self.mapping.write_text(json.dumps(self.data))
+        self.fake.records["42"] = {
+            "activityId": 42, "activityName": "Remote morning run",
+            "summaryDTO": {"startTimeGMT": "2025-01-02T00:00:00"},
+            "activityTypeDTO": {"typeKey": "running"},
+        }
+
+    def test_type_review_displays_original_current_proposed_values_and_catalog_binding(self):
+        self.use_type_fixture()
+        self.assertEqual(self.run_cli(["review", str(self.mapping)]), 0)
+        output = self.output.getvalue()
+        for expected in (
+            '"activityType": "Running"', '"currentActivityType": "running"',
+            '"newActivityType": "trail_running"', '"typeId": 6', '"parentTypeId": 1',
+            '"originalTitle": "Morning run"', '"currentTitle": "Remote morning run"',
+            '"changedSinceExport": true', '"typeChangedSinceExport": false',
+        ):
+            self.assertIn(expected, output)
+        self.assertEqual(self.fake.writes, [])
+        self.assertEqual(self.fake.type_writes, [])
+        self.assertEqual(self.run_cli(["apply", str(self.mapping)]), 0)
+        self.assertEqual(self.fake.writes, [])
+        self.assertEqual(len(self.fake.type_writes), 1)
+        self.assertIn("1 eligible activity changes", self.output.getvalue())
+        self.assertEqual(self.run_cli(["apply", str(self.mapping)], tty=False), 0)
+        self.assertEqual(len(self.fake.type_writes), 1)
+        self.assertIn('"typeChangedSinceExport": true', self.output.getvalue())
+
+    def test_type_changes_require_interactive_confirmation(self):
+        self.use_type_fixture()
+        self.assertEqual(self.run_cli(["apply", str(self.mapping)], tty=False), 1)
+        self.assertEqual(self.run_cli(["apply", str(self.mapping)], answer="CANCEL"), 1)
+        self.assertEqual(self.fake.type_writes, [])
+        self.assertEqual(self.fake.writes, [])
+
+    def test_invalid_v3_inputs_are_rejected_before_authentication(self):
+        self.use_type_fixture()
+        for values in ({"newActivityType": None}, {"newActivityType": "Running"},
+                       {"newTitle": None}, {"newActivityType": "running"}, {"typeId": 6}):
+            data = deepcopy(self.data)
+            data["changes"][0].update(values)
+            self.mapping.write_text(json.dumps(data))
+            with self.subTest(values=values):
+                self.assertEqual(self.run_cli(["review", str(self.mapping)]), 2)
+        self.assertEqual(self.fake.connects, 0)
+
+    def test_partial_combined_cli_recovery_requires_confirmation_and_skips_completed_title(self):
+        self.use_type_fixture()
+        self.data["changes"][0]["newTitle"] = "Trail morning"
+        self.mapping.write_text(json.dumps(self.data))
+        self.fake.on_type_write = lambda _id, _type: None
+        self.assertEqual(self.run_cli(["apply", str(self.mapping)]), 1)
+        self.assertEqual(self.fake.writes, [("42", "Trail morning")])
+        self.assertEqual(len(self.fake.type_writes), 1)
+        self.mapping.unlink()
+        self.assertEqual(self.run_cli(["reconcile"]), 0)
+        self.assertEqual(self.run_cli(["reconcile", "--apply"], answer="CANCEL"), 1)
+        self.assertEqual(len(self.fake.type_writes), 1)
+        self.fake.on_type_write = None
+        self.assertEqual(self.run_cli(["reconcile", "--apply"]), 0)
+        self.assertEqual(self.fake.writes, [("42", "Trail morning")])
+        self.assertEqual(len(self.fake.type_writes), 2)
