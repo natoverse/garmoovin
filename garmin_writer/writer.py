@@ -330,14 +330,19 @@ class Writer:
             review = self._prepare(request, account)
             unresolved = False
             for old, refreshed in zip(previous.items, review.items):
+                for _, proposed, _, _, status in requested_fields(old):
+                    # A blocked row can enter the next journal when another row is
+                    # applied. Its completed mutations must survive that handoff.
+                    if proposed == "newTitle" and old.titleStatus is None and old.status in COMPLETED:
+                        old.titleStatus = old.status
+                    completion = getattr(old, status)
+                    if completion in COMPLETED or refreshed.currentTitle is None:
+                        setattr(refreshed, status, completion)
                 if refreshed.currentTitle is not None:
                     observe(old, (refreshed.currentTitle, refreshed.currentActivityType))
                     completed_conflict = False
                     for name, proposed, _, observed, status in requested_fields(old):
                         was_completed = getattr(old, status) in COMPLETED
-                        # Legacy journals had only one item-level title outcome.
-                        if proposed == "newTitle" and old.titleStatus is None and old.status in COMPLETED:
-                            was_completed = True
                         if was_completed and getattr(old, observed) != getattr(old.proposal, proposed):
                             refreshed.status = "conflict"
                             refreshed.reason = f"The previously completed Garmin {name} changed. It will not be replayed."
@@ -349,10 +354,16 @@ class Writer:
                             setattr(old, status, getattr(refreshed, status))
                     old.status = "conflict" if completed_conflict else ("already_applied" if all_applied(old) else "not_attempted")
                     old.reason = "Reconciled by reading Garmin. Any remaining change requires a new confirmation."
-                elif "uncertain" in (old.status, old.titleStatus, old.activityTypeStatus):
-                    unresolved = True
-                    refreshed.reason = "The prior write is still uncertain. Reconciliation must succeed before confirming."
-                    refreshed.status = "blocked"
+                else:
+                    # Retain last-known evidence, but leave current values absent:
+                    # no failed or paused read constitutes a fresh authorization.
+                    refreshed.observedTitle = old.observedTitle if old.observedTitle is not None else old.currentTitle
+                    refreshed.observedActivityType = old.observedActivityType if old.observedActivityType is not None else old.currentActivityType
+                    refreshed.resolvedActivityType = old.resolvedActivityType
+                    if "uncertain" in (old.status, old.titleStatus, old.activityTypeStatus):
+                        unresolved = True
+                        refreshed.reason = "The prior write is still uncertain. Reconciliation must succeed before confirming."
+                        refreshed.status = "blocked"
             previous.phase = "recovery" if unresolved else "complete"
             previous.notice = "Reconciliation performed no writes."
             self._publish(previous)

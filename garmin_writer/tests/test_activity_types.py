@@ -252,7 +252,7 @@ class ActivityTypeTests(unittest.TestCase):
         restored = self.restart()
         review = restored.reconcile()
         self.assertEqual(review.items[0].status, "eligible")
-        self.assertEqual(review.items[0].titleStatus, "already_applied")
+        self.assertEqual(review.items[0].titleStatus, "confirmed")
         self.assertEqual(len(self.fake.type_writes), 1)
         self.fake.on_type_write = None
         result = restored.apply(review.id)
@@ -430,3 +430,136 @@ class ActivityTypeTests(unittest.TestCase):
         self.assertEqual(self.journal.latest().items[0].activityTypeStatus, "uncertain")
         self.assertEqual(self.restart().reconcile().items[0].status, "already_applied")
         self.assertEqual((len(self.fake.writes), len(self.fake.type_writes)), (1, 1))
+
+    def test_partial_completion_survives_failed_read_and_applying_another_row(self):
+        def reject_type(_id, _type):
+            raise GarminError("rejected")
+
+        def defer_second_activity(activity_id, _date):
+            if activity_id == "2" and self.fake.writes:
+                raise GarminError("unavailable")
+
+        self.fake.on_type_write = reject_type
+        self.fake.on_read = defer_second_activity
+        result = self.apply(type_proposal(newTitle="New title"), proposal(2))
+        self.assertEqual([item.status for item in result.items], ["failed", "failed"])
+        self.assertEqual(result.items[0].titleStatus, "confirmed")
+        self.assertEqual(result.items[0].activityTypeStatus, "failed")
+        self.assertFalse(result.needs_recovery)
+
+        def unreadable_first_activity(activity_id, _date):
+            if activity_id == "1":
+                raise GarminError("unavailable")
+
+        self.fake.on_read = unreadable_first_activity
+        restored = self.restart()
+        review = restored.reconcile()
+        self.assertEqual([item.status for item in review.items], ["blocked", "eligible"])
+        retained = review.items[0]
+        self.assertEqual(retained.titleStatus, "confirmed")
+        self.assertEqual(retained.activityTypeStatus, "failed")
+        self.assertIsNone(retained.currentTitle)
+        self.assertIsNone(retained.currentActivityType)
+        self.assertEqual(retained.observedTitle, "New title")
+        self.assertEqual(retained.observedActivityType, "hiking")
+        self.assertEqual(retained.resolvedActivityType.typeId, 6)
+        restored.apply(review.id)
+        self.assertEqual(self.journal.latest().items[0].titleStatus, "confirmed")
+        self.assertEqual(self.journal.latest().items[0].resolvedActivityType.typeId, 6)
+
+        self.fake.records["1"]["activityName"] = "External edit after partial completion"
+        self.fake.on_read = None
+        restored = self.restart()
+        review = restored.reconcile()
+        self.assertEqual(review.items[0].status, "conflict")
+        with self.assertRaises(WriterError):
+            restored.apply(review.id)
+        self.assertEqual(self.fake.writes, [("1", "New title"), ("2", "Renamed 2")])
+        self.assertEqual(len(self.fake.type_writes), 1)
+
+    def test_completed_type_survives_failed_read_and_applying_another_row(self):
+        def defer_second_activity(activity_id, _date):
+            if activity_id == "2" and self.fake.type_writes:
+                raise GarminError("unavailable")
+
+        self.fake.on_read = defer_second_activity
+        result = self.apply(type_proposal(), proposal(2))
+        self.assertEqual([item.status for item in result.items], ["confirmed", "failed"])
+
+        def unreadable_first_activity(activity_id, _date):
+            if activity_id == "1":
+                raise GarminError("unavailable")
+
+        self.fake.on_read = unreadable_first_activity
+        restored = self.restart()
+        review = restored.reconcile()
+        self.assertEqual([item.status for item in review.items], ["blocked", "eligible"])
+        self.assertEqual(review.items[0].activityTypeStatus, "confirmed")
+        self.assertEqual(review.items[0].observedActivityType, "trail_running")
+        restored.apply(review.id)
+
+        self.fake.records["1"]["activityTypeDTO"]["typeKey"] = "hiking"
+        self.fake.on_read = None
+        restored = self.restart()
+        review = restored.reconcile()
+        self.assertEqual(review.items[0].status, "conflict")
+        with self.assertRaises(WriterError):
+            restored.apply(review.id)
+        self.assertEqual(self.fake.writes, [("2", "Renamed 2")])
+        self.assertEqual(len(self.fake.type_writes), 1)
+
+    def test_legacy_completion_survives_failed_read_and_applying_another_row(self):
+        review = self.writer.prepare(request(proposal(), proposal(2)))
+        review.phase = "complete"
+        review.items[0].status = "confirmed"
+        review.items[1].status = "failed"
+        data = review.model_dump()
+        for item in data["items"]:
+            for key in ("currentActivityType", "observedActivityType", "resolvedActivityType", "titleStatus", "activityTypeStatus"):
+                del item[key]
+            del item["proposal"]["newActivityType"]
+        path = self.journal.directory / f"{review.id}.json"
+        path.write_text(json.dumps(data))
+        path.chmod(0o600)
+
+        def unreadable_first_activity(activity_id, _date):
+            if activity_id == "1":
+                raise GarminError("unavailable")
+
+        self.fake.on_read = unreadable_first_activity
+        restored = self.restart()
+        refreshed = restored.reconcile()
+        self.assertEqual([item.status for item in refreshed.items], ["blocked", "eligible"])
+        self.assertEqual(refreshed.items[0].titleStatus, "confirmed")
+        restored.apply(refreshed.id)
+        self.assertEqual(self.journal.latest().items[0].titleStatus, "confirmed")
+
+        self.fake.records["1"]["activityName"] = "Externally edited legacy title"
+        self.fake.on_read = None
+        restored = self.restart()
+        refreshed = restored.reconcile()
+        self.assertEqual(refreshed.items[0].status, "conflict")
+        with self.assertRaises(WriterError):
+            restored.apply(refreshed.id)
+        self.assertEqual(self.fake.writes, [("2", "Renamed 2")])
+
+    def test_failed_read_does_not_clear_uncertain_field_history_or_allow_other_writes(self):
+        self.fake.on_type_write = lambda _id, _type: None
+        result = self.apply(type_proposal(newTitle="New title"), proposal(2))
+        self.assertEqual(result.items[0].activityTypeStatus, "uncertain")
+
+        def unreadable_first_activity(activity_id, _date):
+            if activity_id == "1":
+                raise GarminError("unavailable")
+
+        self.fake.on_read = unreadable_first_activity
+        restored = self.restart()
+        with self.assertRaises(WriterError):
+            restored.reconcile()
+        retained = self.journal.latest().items[0]
+        self.assertTrue(self.journal.latest().needs_recovery)
+        self.assertEqual(retained.titleStatus, "confirmed")
+        self.assertEqual(retained.activityTypeStatus, "uncertain")
+        self.assertEqual(retained.resolvedActivityType.typeId, 6)
+        self.assertEqual(self.fake.writes, [("1", "New title")])
+        self.assertEqual(len(self.fake.type_writes), 1)
