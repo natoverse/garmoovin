@@ -131,6 +131,71 @@ test('overlapping archives restore only selected IDs and process only ten additi
   await expect(page.locator('.activity-name[title="garmin-1.gpx"]')).toHaveCount(0)
 })
 
+test('backfills legacy durations once without losing saved titles, previews, or pair scores', async ({ page }) => {
+  await probe(page)
+  await page.goto('./')
+  const archive = await zip([
+    ['garmin-1.gpx', recording(0).replace('T00:00:00Z', 'T01:02:59Z')],
+    ['garmin-2.gpx', recording(1)],
+    ['garmin-3.gpx', gpx()],
+  ])
+  await selectZip(page, archive)
+  await expectLoaded(page, 3)
+  const first = page.locator('tbody tr').filter({ has: page.locator('.activity-name[title="garmin-1.gpx"]') })
+  await expect(first.locator('.activity-duration')).toContainText('01:02')
+  await group(page)
+  await page.locator('.activity-name[title="garmin-1.gpx"]').fill('Remembered title')
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save JSON (1)' }).click()
+  await download
+  await expect(page.locator('.export-notice')).toContainText('Exported titles will be the starting titles on your next load.')
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open('groomin-activities', 1)
+      request.onsuccess = () => resolve(request.result)
+    })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('activities', 'readwrite')
+        const store = tx.objectStore('activities')
+        for (const id of ['1', '3']) {
+          const request = store.get(id)
+          request.onsuccess = () => {
+            const record = request.result
+            delete record.metadata.durationMs
+            store.put(record, id)
+          }
+        }
+        tx.oncomplete = () => resolve()
+        tx.onabort = () => reject(tx.error)
+      })
+    } finally { db.close() }
+  })
+  await page.reload()
+  await selectZip(page, archive)
+  await expectLoaded(page, 3)
+  await expect(page.locator('.cache-summary')).toHaveText('1 from cache · 2 processed')
+  await expect(page.locator('.cache-summary')).toHaveAttribute('data-extracted', '2')
+  await expect(first.locator('.activity-name')).toHaveValue('Remembered title')
+  await expect(first.locator('.activity-duration')).toContainText('01:02')
+  expect(await page.evaluate(() => window.cacheProbe)).toEqual({ parses: 2, hashes: 0, renders: 0, trigonometry: 0 })
+  await group(page)
+  await expect(page.locator('.cache-summary')).toHaveAttribute('data-compared', '0')
+  expect(await storedKeys(page, 'pairs')).toHaveLength(1)
+  await page.reload()
+  await selectZip(page, archive)
+  await expectLoaded(page, 3)
+  await expect(page.locator('.cache-summary')).toHaveText('3 from cache · 0 processed')
+  await expect(first.locator('.activity-name')).toHaveValue('Remembered title')
+  await expect(first.locator('.activity-duration')).toContainText('01:02')
+  await expect(page.locator('.activity-duration')).toHaveText([
+    'Elapsed duration (hours:minutes): 00:00',
+    'Elapsed duration (hours:minutes): 01:02',
+    'Elapsed duration (hours:minutes): Unknown',
+  ])
+  expect(await page.evaluate(() => window.cacheProbe)).toEqual({ parses: 0, hashes: 0, renders: 0, trigonometry: 0 })
+})
+
 test('same-ID changes stay cached until manual clearing, including metadata, profiles and comparison results', async ({ page }) => {
   await probe(page)
   await page.goto('./')

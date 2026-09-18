@@ -7,6 +7,7 @@ export interface Activity {
   name: string
   type: string
   date: number | null
+  durationMs: number | null
 }
 
 function children(element: Element, name: string): Element[] {
@@ -31,8 +32,8 @@ function timestamp(value: string): number | null {
   if (
     month < 1 || month > 12 || day < 1 || day > days[month - 1]! ||
     Number(match[4]) > 23 || Number(match[5]) > 59 || Number(match[6]) > 59 ||
-    (match[9] !== undefined && (Number(match[9]) > 14 || Number(match[10]) > 59 ||
-      (Number(match[9]) === 14 && Number(match[10]) !== 0)))
+    (match[8] !== undefined && (Number(match[8]) > 14 || Number(match[9]) > 59 ||
+      (Number(match[8]) === 14 && Number(match[9]) !== 0)))
   ) return null
   const date = Date.parse(value)
   return Number.isFinite(date) ? date : null
@@ -87,6 +88,8 @@ export function parseGpx(xml: string, sourceFile: string, id: string): { activit
     : 'Unknown'
 
   let earliest: number | null = null
+  let latest: number | null = null
+  let timestampCount = 0
   const route: Route = []
   const elevationTracks: ElevationTracks = []
   for (const track of tracks) {
@@ -100,7 +103,11 @@ export function parseGpx(xml: string, sourceFile: string, id: string): { activit
       }
       for (const point of children(segment, 'trkpt')) {
         const date = timestamp(text(point, 'time'))
-        if (date !== null && (earliest === null || date < earliest)) earliest = date
+        if (date !== null) {
+          timestampCount++
+          if (earliest === null || date < earliest) earliest = date
+          if (latest === null || date > latest) latest = date
+        }
         const position = coordinate(point)
         elevationPoints.push({ position, elevation: elevation(point) })
         if (!position) {
@@ -120,6 +127,7 @@ export function parseGpx(xml: string, sourceFile: string, id: string): { activit
       name,
       type,
       date: earliest ?? timestamp(text(metadata, 'time') || text(root, 'time')),
+      durationMs: timestampCount >= 2 && earliest !== null && latest !== null ? latest - earliest : null,
     },
     route,
     elevation: elevationTracks,
@@ -138,4 +146,9 @@ export function compareActivities(a: Activity, b: Activity): number {
 
 export function formatDate(date: number): string {
   return new Date(date).toISOString().slice(0, 19).replace('T', ' ')
+}
+
+export function formatDuration(durationMs: number): string {
+  const minutes = Math.floor(durationMs / 60_000)
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 }
