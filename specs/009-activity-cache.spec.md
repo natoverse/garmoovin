@@ -83,3 +83,9 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 
 - Spec 006 raises grouping work capacity 100× and retains up to 150,000 pair scores in memory. This accommodates all 136,503 possible comparisons among 523 activities without eviction forcing recalculation; the persistent pair store and cache-format version are unchanged.
 - Keep on-demand comparisons and bounded cache writes. Only completed scores are reusable; new activities or newly encountered pairs still incur first-time work. Preparation, geometry-memory limits, and cancellation remain unchanged.
+
+## Activity duration iteration (2026-09-18)
+
+- Cache elapsed duration in milliseconds (or `null` when unavailable) as activity metadata, preserving the parse-free warm path.
+- Retain database version 1 and accept older records without duration. On their next import, extract and parse just those GPX entries to backfill duration, while preserving cached titles, types, dates, previews, geometry, and pair scores. Count these entries as processed rather than full cache hits.
+- A completed backfill stores the new field, including unavailable durations, so later imports do not repeat parsing. Existing cancellation, cache-clearing, validation, and storage-failure behavior still applies.

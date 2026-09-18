@@ -4,7 +4,7 @@ import type { PairScore } from './similarity'
 import { THUMBNAIL_SETTINGS, type Thumbnail } from './route'
 
 export interface CachedActivity {
-  metadata: Pick<Activity, 'name' | 'type' | 'date'>
+  metadata: Pick<Activity, 'name' | 'type' | 'date'> & Partial<Pick<Activity, 'durationMs'>>
   thumbnail: Extract<Thumbnail, { status: 'ready' | 'none' }>
   elevation: Extract<ElevationProfile, { status: 'ready' }> | { status: 'none' }
   // SimilaritySession owns decoding its private spatial representation.
@@ -25,6 +25,8 @@ function validRecord(value: unknown): value is CachedActivity {
   return typeof metadata.name === 'string' && typeof metadata.type === 'string' &&
     (metadata.date === null || (typeof metadata.date === 'number' && Number.isFinite(metadata.date) &&
       Number.isFinite(new Date(metadata.date).getTime()))) &&
+    (metadata.durationMs === undefined || metadata.durationMs === null ||
+      (typeof metadata.durationMs === 'number' && Number.isFinite(metadata.durationMs) && metadata.durationMs >= 0)) &&
     (thumbnail.status === 'none' || (thumbnail.status === 'ready' && thumbnail.image instanceof Blob &&
       thumbnail.image.type === 'image/png' && thumbnail.image.size > 0 &&
       thumbnail.image.size <= THUMBNAIL_SETTINGS.width * THUMBNAIL_SETTINGS.height * 8)) &&

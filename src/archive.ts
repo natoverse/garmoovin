@@ -109,12 +109,22 @@ export async function importArchive(
               cache.invalidRecord()
             }
             if (geometry) {
+              if (record.metadata.durationMs === undefined) {
+                processed++
+                extracted++
+                const xml = await entry.getData(new TextWriter(), { signal, checkSignature: true })
+                signal.throwIfAborted()
+                record.metadata = { ...record.metadata, durationMs: parseGpx(xml, entry.filename, String(index)).activity.durationMs }
+                writes.set(id, record)
+              } else {
+                cacheHits++
+              }
               activities.push({
                 ...record.metadata, id: String(index), sourceFile: entry.filename,
+                durationMs: record.metadata.durationMs ?? null,
                 thumbnail: record.thumbnail, elevation: record.elevation, geometry,
               })
               cached.delete(id)
-              cacheHits++
               publish(index + 1, activities.length === 1)
               continue
             }
@@ -184,7 +194,7 @@ export async function importArchive(
           if (id && geometry && (completed.thumbnail.status === 'ready' || completed.thumbnail.status === 'none') &&
             (completed.elevation.status === 'ready' || completed.elevation.status === 'none')) {
             writes.set(id, {
-              metadata: { name: completed.name, type: completed.type, date: completed.date },
+              metadata: { name: completed.name, type: completed.type, date: completed.date, durationMs: completed.durationMs },
               thumbnail: completed.thumbnail,
               elevation: completed.elevation.status === 'ready' ? completed.elevation : { status: 'none' },
               geometry,

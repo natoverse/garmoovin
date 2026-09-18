@@ -122,6 +122,78 @@ test('uses the earliest valid trackpoint across tracks and segments, not export 
   ])
 })
 
+test('shows elapsed hours and minutes below the date using only valid trackpoint timestamps', async ({ page }) => {
+  const cases = [
+    {
+      name: 'Across tracks',
+      body: `<metadata><time>2030-01-01T00:00:00Z</time></metadata>
+        <trk><trkseg>${point('2024-06-02T02:35:59Z')}${point('invalid')}</trkseg>
+        <trkseg>${point('2024-06-01T02:00:00+02:00')}</trkseg></trk>
+        <trk><trkseg>${point('2024-05-31T23:30:00Z')}</trkseg></trk>`,
+      duration: '27:05',
+    },
+    {
+      name: 'Invalid timestamps',
+      body: `<trk xmlns:x="urn:synthetic"><trkseg>
+        ${point('2024-02-29T12:00:00Z')}${point('2024-02-29T13:02:59Z')}
+        ${point('2024-02-30T00:00:00Z')}${point('2024-02-29T24:00:00Z')}
+        ${point('2024-03-01T12:00:00')}${point('2024-03-01T12:00:00+15:00')}
+        <trkpt lat="0" lon="0"><x:time>2030-01-01T00:00:00Z</x:time></trkpt>
+        </trkseg></trk>`,
+      duration: '01:02',
+    },
+    {
+      name: 'Subminute',
+      body: `<trk><trkseg>${point('2024-01-01T00:00:00Z')}${point('2024-01-01T00:00:59Z')}</trkseg></trk>`,
+      duration: '00:00',
+    },
+    {
+      name: 'Equal timestamps',
+      body: `<trk><trkseg>${point('2024-01-01T00:00:00Z')}${point('2024-01-01T00:00:00Z')}</trkseg></trk>`,
+      duration: '00:00',
+    },
+    {
+      name: 'Long activity',
+      body: `<trk><trkseg><trkpt><time>2024-01-05T04:05:00Z</time></trkpt>
+        <trkpt><time>2024-01-01T00:00:00Z</time></trkpt></trkseg></trk>`,
+      duration: '100:05',
+    },
+    {
+      name: 'One timestamp',
+      body: `<metadata><time>2023-01-01T00:00:00Z</time></metadata>${track('', '', '2024-01-01T00:00:00Z')}`,
+      duration: 'Unknown',
+    },
+    { name: 'Metadata only', body: '<metadata><time>2024-01-01T00:00:00Z</time></metadata>', duration: 'Unknown' },
+    { name: 'No timestamps', body: '', duration: 'Unknown' },
+  ]
+  await selectZip(page, await zip(cases.map(({ name, body }) => [`${name}.gpx`, gpx(body)])))
+  await expectLoaded(page, cases.length)
+  for (const { name, duration } of cases) {
+    const row = page.locator('tbody tr').filter({ has: page.locator(`.activity-name[title="${name}.gpx"]`) })
+    await expect(row.locator('.activity-duration')).toHaveText(`Elapsed duration (hours:minutes): ${duration}`)
+    const dateBox = await row.locator('.activity-timestamp').boundingBox()
+    const durationBox = await row.locator('.activity-duration').boundingBox()
+    expect(durationBox!.y).toBeGreaterThanOrEqual(dateBox!.y + dateBox!.height)
+  }
+})
+
+test('keeps duration visible in matched route groups and on narrow screens', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await selectZip(page, await zip(['First', 'Second'].map((name, index) => [
+    `garmin-${index + 1}.gpx`,
+    gpx(`<trk><name>${name}</name><trkseg>
+      <trkpt lat="0" lon="0"><time>2024-01-01T00:00:00Z</time></trkpt>
+      <trkpt lat="0" lon="0.01"><time>2024-01-01T01:05:00Z</time></trkpt>
+      </trkseg></trk>`),
+  ])))
+  await expectLoaded(page, 2)
+  await expect(page.locator('.activity-duration')).toHaveText(Array(2).fill('Elapsed duration (hours:minutes): 01:05'))
+  await page.getByRole('checkbox', { name: 'Group similar routes' }).check()
+  await expect(page.locator('.route-bundle')).toHaveCount(1)
+  await expect(page.locator('.route-bundle .activity-duration')).toHaveText(Array(2).fill('Elapsed duration (hours:minutes): 01:05'))
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
 test('ignores foreign extension names and times', async ({ page }) => {
   await selectZip(page, await zip([['extension.gpx', gpx(`
     <metadata><name>Actual name</name><time>2024-01-01T00:00:00Z</time></metadata>

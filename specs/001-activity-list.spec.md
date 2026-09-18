@@ -58,3 +58,11 @@ This is the first step toward the route-first gallery described in `MANIFESTO.md
 - Link to `https://connect.garmin.com/modern/activity/<id>` in a new tab with `noopener noreferrer`. Include the imported activity name, source path, and new-tab warning in the accessible link name. Draft edits, filtering, and grouping must not change the target.
 - If the filename supplies no valid ID, show **Garmin Connect link unavailable — no activity ID** instead of guessing a URL. Missing dates, types, or route geometry do not block a link when an ID is available.
 - This permits user-initiated external navigation, not Garmin API integration: no Garmin request occurs during import or browsing. Garmin may require login on its own website; Groomin never receives credentials.
+
+## Activity duration iteration (2026-09-18)
+
+- Display elapsed duration directly below each activity's UTC date in both normal and grouped lists, labeled for assistive technology as hours and minutes.
+- Derive elapsed duration from the earliest and latest valid GPX trackpoint timestamps across all tracks and segments, including pauses and gaps. This is elapsed time, not moving time; metadata/export timestamps do not supply duration.
+- Require at least two valid trackpoint timestamps; otherwise display **Unknown**. Repeated equal timestamps yield **00:00**. Use the existing timezone/calendar validation, independent of coordinate validity, and ignore foreign extension times.
+- Format total hours and minutes as `hh:mm`, truncating leftover seconds, padding both fields to at least two digits, and retaining hours beyond 24.
+- Persist duration with activity metadata. Backfill older records on their next selected import without discarding remembered titles or prepared previews/geometry (see spec 009). Sorting and JSON exports remain unchanged.
