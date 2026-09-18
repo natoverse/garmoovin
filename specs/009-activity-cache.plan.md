@@ -69,7 +69,7 @@ Keep the implementation on a review branch and open a separate PR; do not merge 
 
 ## Verification Plan
 
-- Use existing Playwright tooling through the built `/groomin/` app and the hosted Check workflow; no new benchmark framework or dependencies.
+- Use existing Playwright tooling through the built `/garmoovin/` app and the hosted Check workflow; no new benchmark framework or dependencies.
 - Instrument entry extraction, XML parsing, route hashing/projection, preview generation, similarity preparation, descriptor restoration, and directed-distance scoring. Assert the fast-path counters in spec 009, not only that cached pictures appear.
 - Use 500 deterministic Garmin-ID tracks with recorded elevations, repeat groups, and unrelated routes. Warm through the real cold import/grouping path, await committed cache writes, reload, reselect the ZIP, and assert the 5-second import and 2-second regrouping targets.
 - Exercise subsets/supersets, changed ZIP names/folders, new IDs, IDs beyond safe integer precision, duplicate entries, missing IDs, and changed same-ID GPX content. Changed cached content must remain unchanged until clearing; after clearing the new content must appear.

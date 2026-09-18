@@ -7,7 +7,8 @@ for (const width of [320, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('./')
-    await expect(page.getByRole('img', { name: 'Groomin logo' })).toHaveJSProperty('naturalWidth', 1536)
+    await expect(page.getByRole('img', { name: "garmoovin' logo" })).toHaveJSProperty('naturalWidth', 1536)
+    await expect(page.getByRole('img', { name: "garmoovin' logo" })).toHaveAttribute('src', /\/garmoovin\/assets\/garmoovin-logo-[\w-]+\.jpg$/)
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(251, 243, 226)')
     await expect(page.locator('body')).toHaveCSS('color', 'rgb(46, 26, 12)')
     await expect(page.locator('body')).toHaveCSS('font-family', /Hanken Grotesk/)
@@ -56,8 +57,8 @@ for (const width of [320, 768, 1440]) {
 }
 
 test('README embeds the same logo used in the website', () => {
-  expect(readFileSync('README.md', 'utf8')).toMatch(/^<img src="src\/assets\/groomin-logo\.jpg" alt="Groomin logo"/)
-  expect(readFileSync('src/assets/groomin-logo.jpg').length).toBeLessThan(400 * 1024)
+  expect(readFileSync('README.md', 'utf8')).toMatch(/^<img src="src\/assets\/garmoovin-logo\.jpg" alt="garmoovin' logo"/)
+  expect(readFileSync('src/assets/garmoovin-logo.jpg').length).toBeLessThan(400 * 1024)
 })
 
 test('font requests expose only the fixed public typography query and no referrer', async ({ page }) => {

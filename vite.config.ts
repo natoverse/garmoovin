@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/groomin/',
+  base: '/garmoovin/',
   publicDir: false,
   server: {
     fs: {

@@ -47,27 +47,27 @@ def private_directory(path: Path) -> Path:
 
 
 def default_directory(name: str) -> Path:
-    current_root = Path.home() / ".groomin"
-    legacy_root = Path.home() / ".garmin-view"
-    if legacy_root.exists() or legacy_root.is_symlink():
-        if current_root.exists() or current_root.is_symlink():
-            raise StorageError("Both Groomin and legacy private storage exist. Select the intended token/journal directories explicitly; do not discard recovery journals.")
+    roots = [Path.home() / value for value in (".garmoovin", ".groomin", ".garmin-view")]
+    existing = [root for root in roots if root.exists() or root.is_symlink()]
+    if len(existing) > 1:
+        raise StorageError("Multiple current or legacy private storage roots exist. Select the intended token/journal directories explicitly; do not discard recovery journals.")
+    root = existing[0] if existing else roots[0]
+    if root != roots[0]:
         print(f"Using the legacy private {name} directory to preserve existing state. No data was moved or discarded.", file=sys.stderr)
-        return legacy_root / name
-    return current_root / name
+    return root / name
 
 
 def journal_directory() -> Path:
-    current = os.getenv("GROOMIN_JOURNAL_DIR")
-    legacy = os.getenv("GARMIN_VIEW_JOURNAL_DIR")
-    if current is not None and legacy is not None and Path(current).expanduser().absolute() != Path(legacy).expanduser().absolute():
-        raise StorageError("Conflicting journal directory settings. Set only GROOMIN_JOURNAL_DIR to the existing recovery journal directory.")
-    if current is not None:
-        return Path(current)
-    if legacy is not None:
-        print("GARMIN_VIEW_JOURNAL_DIR is deprecated; use GROOMIN_JOURNAL_DIR with the same directory.", file=sys.stderr)
-        return Path(legacy)
-    return default_directory("journal")
+    names = ("GARMOOVIN_JOURNAL_DIR", "GROOMIN_JOURNAL_DIR", "GARMIN_VIEW_JOURNAL_DIR")
+    settings = [(name, Path(os.environ[name])) for name in names if name in os.environ]
+    if not settings:
+        return default_directory("journal")
+    if len({path.expanduser().absolute() for _, path in settings}) > 1:
+        raise StorageError("Conflicting journal directory settings. Set only GARMOOVIN_JOURNAL_DIR to the existing recovery journal directory.")
+    for name, _ in settings:
+        if name != names[0]:
+            print(f"{name} is deprecated; use GARMOOVIN_JOURNAL_DIR with the same directory.", file=sys.stderr)
+    return settings[0][1]
 
 
 def token_directory() -> Path:

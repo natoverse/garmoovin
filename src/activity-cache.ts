@@ -12,6 +12,7 @@ export interface CachedActivity {
 }
 
 export const CACHE_BATCH_SIZE = 32
+// Keep the persisted key so rebranding does not lose remembered titles/types.
 const DATABASE = 'groomin-activities'
 const VERSION = 1
 
@@ -75,7 +76,7 @@ export class ActivityCache {
         }
         request.onblocked = () => {
           blocked = true
-          reject(new Error('Close other Groomin tabs and try again.'))
+          reject(new Error("Close other garmoovin' tabs and try again."))
         }
         request.onerror = () => reject(request.error ?? new Error('Unable to open activity storage.'))
         request.onsuccess = () => {

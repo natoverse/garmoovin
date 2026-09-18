@@ -8,7 +8,9 @@ test('project-path assets, Google font stylesheet, and private JSON handoff work
   const requests: { url: string; method: string; body: string | null }[] = []
   page.on('request', (request) => requests.push({ url: request.url(), method: request.method(), body: request.postData() }))
   await page.goto('./')
-  await expect(page).toHaveURL(/\/groomin\/$/)
+  await expect(page).toHaveURL(/\/garmoovin\/$/)
+  await expect(page).toHaveTitle("garmoovin'")
+  await expect(page.locator('.footer-brand')).toHaveText("garmoovin'")
   const archive = await zip([
     ['nested/garmin-1.gpx', gpx('<trk><name>Original 1</name><type>hiking</type><trkseg><trkpt lat="0" lon="0"><time>2025-01-01T10:00:00Z</time></trkpt><trkpt lat="1" lon="1"/></trkseg></trk>')],
     ['garmin-2.gpx', gpx('<trk><name>Original 2</name><type>hiking</type><trkseg><trkpt lat="0" lon="0"><time>2025-01-01T10:00:00Z</time></trkpt><trkpt lat="2" lon="2"/></trkseg></trk>')],
@@ -45,7 +47,7 @@ test('project-path assets, Google font stylesheet, and private JSON handoff work
       expect(url.searchParams.get('display')).toBe('swap')
       expect(Array.from(url.searchParams.keys())).toEqual(['family', 'family', 'family', 'display'])
     } else {
-      expect(request.url).toMatch(/^http:\/\/127\.0\.0\.1:4175\/groomin\/(?:$|assets\/)/)
+      expect(request.url).toMatch(/^http:\/\/127\.0\.0\.1:4175\/garmoovin\/(?:$|assets\/)/)
     }
   }
   expect(http.some((request) => request.url.startsWith('https://fonts.googleapis.com/'))).toBe(true)

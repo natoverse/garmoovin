@@ -31,7 +31,7 @@ def display(batch: Batch) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Review and apply a Groomin schema-v2/v3 JSON export. No website connection or ZIP is needed.")
+    parser = argparse.ArgumentParser(description="Review and apply a garmoovin' schema-v2/v3 JSON export. No website connection or ZIP is needed.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("login", help="Authenticate in this terminal and save a private session; no activity writes")
     for name in ("review", "apply"):

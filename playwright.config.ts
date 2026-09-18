@@ -7,13 +7,13 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4175/groomin/',
+    baseURL: 'http://127.0.0.1:4175/garmoovin/',
     ...devices['Desktop Chrome'],
     trace: 'retain-on-failure',
   },
   webServer: {
     command: 'npm run build && npm run preview -- --port 4175 --strictPort',
-    url: 'http://127.0.0.1:4175/groomin/',
+    url: 'http://127.0.0.1:4175/garmoovin/',
     reuseExistingServer: false,
     timeout: 120_000,
   },

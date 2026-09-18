@@ -1,6 +1,8 @@
-<img src="src/assets/groomin-logo.jpg" alt="Groomin logo" width="620" />
+<img src="src/assets/garmoovin-logo.jpg" alt="garmoovin' logo" width="620" />
 
-# Groomin
+# garmoovin'
+
+Project and repository name: **garmoovin**. The app is styled **garmoovin'**.
 
 A personal Garmin activity cleanup companion to Stronger, with two independent units:
 
@@ -9,7 +11,7 @@ A personal Garmin activity cleanup companion to Stronger, with two independent u
 
 ## GitHub Pages
 
-The website's project path is `/groomin/`, with its Pages address at `https://natoverse.github.io/groomin/` after deployment. In the repository's **Settings → Pages**, select **GitHub Actions** as the source before the first deployment. The **Deploy Pages** workflow builds and publishes only Vite's `dist` artifact when changes reach `main`; it can also be dispatched on `main`. Browser tests run in the **Check** workflow for pull requests and pushes, not during deployment. The feature branch itself does not deploy.
+The website's project path is `/garmoovin/`, with its Pages address at `https://natoverse.github.io/garmoovin/` after deployment. In the repository's **Settings → Pages**, select **GitHub Actions** as the source before the first deployment. The **Deploy Pages** workflow builds and publishes only Vite's `dist` artifact when changes reach `main`; it can also be dispatched on `main`. Browser tests run in the **Check** workflow for pull requests and pushes, not during deployment. The feature branch itself does not deploy.
 
 There is no website backend, localhost bridge, Garmin login, or Apply to Garmin button. Hosting serves code only. The Python CLI, credentials, journals, archives, and downloads are not deployment artifacts. A Pages website can be publicly accessible even when its source repository is private; private activity files must never be added to the published assets.
 
@@ -21,7 +23,7 @@ Dates are labeled UTC. Missing names fall back to GPX metadata or the filename; 
 
 Elapsed duration appears below each date as **hh:mm**, including in grouped lists. It spans the earliest to latest valid GPX trackpoint timestamps, including pauses, rather than moving time. Seconds are truncated and hours can exceed 24. Fewer than two valid trackpoint timestamps displays **Unknown**.
 
-Use **View on Garmin Connect** below an activity's title to review its full details on Garmin's website in a new tab, keeping your local drafts open. Garmin may ask you to sign in there. Links are available in normal and grouped lists when the source filename matches `garmin-<positive integer>.gpx` (case-insensitive, including nested folders). Other filenames show **Garmin Connect link unavailable — no activity ID**; Groomin does not guess a match from the activity name.
+Use **View on Garmin Connect** below an activity's title to review its full details on Garmin's website in a new tab, keeping your local drafts open. Garmin may ask you to sign in there. Links are available in normal and grouped lists when the source filename matches `garmin-<positive integer>.gpx` (case-insensitive, including nested folders). Other filenames show **Garmin Connect link unavailable — no activity ID**; garmoovin' does not guess a match from the activity name.
 
 ## Filtering and search
 
@@ -39,7 +41,7 @@ Images are generated in the browser and saved as part of the activity cache desc
 
 ## Fast repeat imports and the activity cache
 
-Groomin uses IndexedDB, not `localStorage`: database **`groomin-activities`**, with **`activities`** and **`pairs`** stores. A `garmin-<positive integer>.gpx` filename supplies the activity ID, retained as a string. Nested folders and case-insensitive filenames are supported. The cache survives reloads and works across overlapping archives; only entries in the ZIP you select appear.
+garmoovin' uses IndexedDB, not `localStorage`: database **`groomin-activities`**, with **`activities`** and **`pairs`** stores. This legacy storage key is intentionally unchanged so remembered titles/types and cached processing survive the rename on the same site origin. A `garmin-<positive integer>.gpx` filename supplies the activity ID, retained as a string. Nested folders and case-insensitive filenames are supported. The cache survives reloads and works across overlapping archives; only entries in the ZIP you select appear.
 
 Each complete activity record contains its starting title/type/date and elapsed duration, route PNG, elevation profile and statistics, and prepared similarity geometry. Titles and types initially come from GPX; **Save JSON** updates only the exported fields in the cache for the next load. A warm hit skips GPX extraction, XML parsing, route hashing/projection, and preview/geometry preparation. Previously computed pair distances are also reused; bundles are still assembled for your current filters and tolerance. New IDs are processed normally. The viewer reports how many entries came **from cache** versus were **processed**.
 
@@ -127,9 +129,9 @@ python3.13 -m venv .venv
 
 When any activities are blocked, reviews and operation results print a **Blocked activities** list immediately after the outcome counts. Each entry includes its current title (or original title if unavailable), Garmin ID, source file, and blocking reason. Missing IDs or explanations are explicitly marked; the full JSON details remain available above the summary.
 
-`GARMINTOKENS` is a CLI-only **token-directory path**, not token JSON or a permanent bearer token. It defaults to `~/.groomin/tokens`. The library restores and refreshes saved sessions; expired authentication requires `login` again, never an automatic write retry. `GROOMIN_JOURNAL_DIR` defaults to `~/.groomin/journal`. Use separate dedicated directories outside this repository, owned by you, with no symlinked ancestry. Directories use mode 0700 and token/journal files use 0600. Process locks prevent overlapping writers or logins sharing these token/journal directories.
+`GARMINTOKENS` is a CLI-only **token-directory path**, not token JSON or a permanent bearer token. Fresh installations default to `~/.garmoovin/tokens`. The library restores and refreshes saved sessions; expired authentication requires `login` again, never an automatic write retry. `GARMOOVIN_JOURNAL_DIR` overrides the journal directory, which defaults to `~/.garmoovin/journal`. Use separate dedicated directories outside this repository, owned by you, with no symlinked ancestry. Directories use mode 0700 and token/journal files use 0600. Process locks prevent overlapping writers or logins sharing these token/journal directories.
 
-**Existing installations:** the former `~/.garmin-view` storage and `GARMIN_VIEW_JOURNAL_DIR` setting remain recognized, with a warning, so a rename cannot silently abandon credentials or an unresolved journal. If both storage roots exist or environment settings conflict, select the existing token/journal directories explicitly before continuing. Nothing is moved or deleted automatically. Rename these directories only while no writer or login is running, preserving the entire journal history.
+**Existing installations:** a sole existing `~/.groomin` or `~/.garmin-view` root is reused with a warning, preserving sessions and recovery journals. `GROOMIN_JOURNAL_DIR` and `GARMIN_VIEW_JOURNAL_DIR` remain recognized with deprecation warnings; replace them with `GARMOOVIN_JOURNAL_DIR` pointing to the same directory. If multiple current/legacy roots exist or environment settings conflict, select the existing token/journal directories explicitly before continuing. Nothing is moved or deleted automatically. Rename these directories only while no writer or login is running, preserving the entire journal history. The `garmin_writer` module, `GARMINTOKENS`, and JSON export filename/schema are unchanged.
 
 For each proposal, the exact ID must appear in the authenticated account's activity listing and match the returned details, known type, and start time within **60 seconds**. The listing uses the UTC source day plus/minus one day to cover Garmin's local-date filtering; it never chooses a nearest match. Type checks ignore case and space/hyphen/underscore formatting, not meaning. A type-edit proposal may also match its proposed type so already-applied edits can be safely recognized; unrelated remote types are blocked. The review's `changedSinceExport` flag highlights remote names that differ from the imported title.
 
@@ -177,11 +179,11 @@ Archive contents are processed in browser memory. The website has no login, acti
 
 The supplied warm cream/rust theme uses **Bagel Fat One**, **Hanken Grotesk**, and **Space Mono** from the Google Fonts CDN (`fonts.googleapis.com` and `fonts.gstatic.com`). These are public typography requests, not activity-data requests; Google receives normal connection metadata such as your IP address. The page sets a no-referrer policy, and readable local fallback fonts keep the viewer usable if the CDN is blocked or unavailable. No filenames, titles, routes, or exports are included in font requests.
 
-The GitHub Pages client holds no Garmin credentials and makes no automatic Garmin requests. Activating **View on Garmin Connect** opens Garmin's website with the activity ID in the URL, without a referrer or access to the Groomin tab; no GPX contents or drafts are sent. Garmin handles login on its own site. Only the explicitly invoked local writer uses the Garmin API for authentication, activity reads, and title/type updates. Neither unit uploads GPX archives or route coordinates.
+The GitHub Pages client holds no Garmin credentials and makes no automatic Garmin requests. Activating **View on Garmin Connect** opens Garmin's website with the activity ID in the URL, without a referrer or access to the garmoovin' tab; no GPX contents or drafts are sent. Garmin handles login on its own site. Only the explicitly invoked local writer uses the Garmin API for authentication, activity reads, and title/type updates. Neither unit uploads GPX archives or route coordinates.
 
 The IndexedDB activity cache persists Garmin activity IDs, starting titles/types/dates, route PNGs, elevation profiles/statistics, prepared spatial geometry, and computed pair distances. Save JSON updates exported titles/types in this cache. Images and derived geometry can reveal sensitive locations. The original ZIP/GPX, full source paths, raw coordinate/elevation arrays, unsaved drafts, and final groups are not stored. Filename-based name fallbacks can appear in cached display names. Clear the activity cache when you no longer want this information on the device.
 
-**Clear activity cache** clears `groomin-activities` and removes `groomin-thumbnails` and `garmin-view-thumbnails` on the same origin; close other viewer tabs if cleanup is blocked. Old database names are retained only for cleanup compatibility.
+**Clear activity cache** clears `groomin-activities` and removes `groomin-thumbnails` and `garmin-view-thumbnails` on the same origin; close other viewer tabs if cleanup is blocked. The activity database name remains a stable compatibility key; old thumbnail database names are retained only for cleanup.
 
 ZIP and GPX files, `garmin-title-mappings*.json` exports (including browser-numbered copies), `local-data/`, build output, and browser-test artifacts are Git-ignored. Keep renamed exports and any other locally generated activity data in `local-data/`. Neither downloads nor `local-data/` belong in the deployed artifact. The build has no public-data directory and includes only the app entry point and its imported assets; private archives must never be imported into application source.
 
@@ -189,12 +191,12 @@ Downloaded JSON and CLI journals contain private activity IDs, dates, paths, and
 
 ## Project
 
-The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright at the actual `/groomin/` base path. The **Check** workflow builds/type-checks the website and runs browser and Python unittest coverage. The separate **Deploy Pages** workflow publishes only `dist` from `main`, never Python code, credentials, journals, test data, or source archives.
+The frontend uses TypeScript, React, and Vite, following Stronger's conventions without its Firebase integration. ZIP entries are read sequentially and parsed in the browser. Tests create synthetic archives in memory and exercise the built app with Playwright at the actual `/garmoovin/` base path. The **Check** workflow builds/type-checks the website and runs browser and Python unittest coverage. The separate **Deploy Pages** workflow publishes only `dist` from `main`, never Python code, credentials, journals, test data, or source archives.
 
 See `MANIFESTO.md` for the product direction and specs 001–009 for the implemented scope. Spec 004 covers title/type editing, spec 005 owns the standalone writer, spec 007 owns static deployment and the versioned JSON boundary, spec 008 adds elevation profiles, and spec 009 covers caching.
 
 ## Supplied visual design
 
-The app uses the supplied `theme.css` tokens for its cream background, brown ink, rust buttons, amber selections, olive focus rings, rounded panels, and offset shadows. The same supplied logo appears above the viewer and this README; it is an optimized JPEG preserving the original artwork and dimensions. Route previews use matching cream/rust colors with a new rendering-cache version.
+The app uses the supplied `theme.css` tokens for its cream background, brown ink, rust buttons, amber selections, olive focus rings, rounded panels, and offset shadows. The new garmoovin' logo appears above the viewer and this README as `src/assets/garmoovin-logo.jpg`; it is an optimized JPEG preserving the supplied artwork and 1536 x 1024 dimensions. The supplied root file was named `garmoovin.png` but contained JPEG data, so the shipped asset uses its correct extension. Route previews use matching cream/rust colors.
 
-`groomin-design.zip` remains local and Git-ignored. Only the public theme and logo are extracted into `src/`; the example HTML is a visual reference, and its design-tool support script is neither executed nor shipped. No new frontend framework, animation library, or backend is introduced.
+The original design archive, `groomin-design.zip`, remains local and Git-ignored. Only the public theme and replacement logo are shipped in `src/`; the example HTML is a visual reference, and its design-tool support script is neither executed nor shipped. No new frontend framework, animation library, or backend is introduced.

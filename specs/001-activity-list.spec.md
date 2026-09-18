@@ -57,7 +57,7 @@ This is the first step toward the route-first gallery described in `MANIFESTO.md
 - Reuse the export's `candidateActivityId` validation: a case-insensitive `garmin-<positive integer>.gpx` basename in a valid source path supplies the ID. Keep IDs as strings, including large values. Do not infer identity from titles, dates, or GPX links.
 - Link to `https://connect.garmin.com/modern/activity/<id>` in a new tab with `noopener noreferrer`. Include the imported activity name, source path, and new-tab warning in the accessible link name. Draft edits, filtering, and grouping must not change the target.
 - If the filename supplies no valid ID, show **Garmin Connect link unavailable — no activity ID** instead of guessing a URL. Missing dates, types, or route geometry do not block a link when an ID is available.
-- This permits user-initiated external navigation, not Garmin API integration: no Garmin request occurs during import or browsing. Garmin may require login on its own website; Groomin never receives credentials.
+- This permits user-initiated external navigation, not Garmin API integration: no Garmin request occurs during import or browsing. Garmin may require login on its own website; garmoovin' never receives credentials.
 
 ## Activity duration iteration (2026-09-18)
 

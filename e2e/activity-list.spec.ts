@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 
 test('explains local import and renders an accessible empty state', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Good routes. Better names.' })).toBeVisible()
-  await expect(page.getByRole('img', { name: 'Groomin logo' })).toBeVisible()
+  await expect(page.getByRole('img', { name: "garmoovin' logo" })).toBeVisible()
   await expect(page.getByText('Your activities will appear here')).toBeVisible()
   await expect(page.getByText('Read in your browser. Nothing uploaded, no Garmin login.')).toBeVisible()
   await page.keyboard.press('Tab')
@@ -87,7 +87,7 @@ test('opens the exact Garmin activity in an isolated new tab without losing draf
   await expect(popup).toHaveURL('https://connect.garmin.com/modern/activity/42')
   expect(await popup.evaluate(() => window.opener === null && document.referrer === '')).toBe(true)
   expect(requests).toEqual([{ url: 'https://connect.garmin.com/modern/activity/42', referer: undefined }])
-  await expect(page).toHaveURL(/\/groomin\/$/)
+  await expect(page).toHaveURL(/\/garmoovin\/$/)
   await expect(title).toHaveValue('Local draft')
   await popup.close()
 })

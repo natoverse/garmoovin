@@ -9,7 +9,7 @@ import { ActivityCache } from './activity-cache'
 import { candidateActivityId, createTitleMappingExport, pendingTitleChanges, requestTitleMappingDownload, titleExportErrors } from './title-edits'
 import { useSimilarity } from './use-similarity'
 import { activityTypeKey, activityTypeLabel, activityTypeOptions } from './activity-types'
-import logo from './assets/groomin-logo.jpg'
+import logo from './assets/garmoovin-logo.jpg'
 import './theme.css'
 import './App.css'
 
@@ -387,7 +387,7 @@ export default function App() {
   return (
     <main>
       <header className="app-header">
-        <img className="brand-art" src={logo} alt="Groomin logo" width="1536" height="1024" fetchPriority="high" />
+        <img className="brand-art" src={logo} alt="garmoovin' logo" width="1536" height="1024" fetchPriority="high" />
         <div className="header-copy">
           <p className="eyebrow">Your activity archive</p>
           <h1>Good routes.<br /><span>Better names.</span></h1>
@@ -659,7 +659,7 @@ export default function App() {
       )}
 
       <footer>
-        <span className="footer-brand">groomin'</span>
+        <span className="footer-brand">garmoovin'</span>
         <div>
           <p>Source GPX files stay unchanged. No changes are made to Garmin Connect.</p>
           <p>Typography from Google Fonts. Your activity data stays in your browser.</p>

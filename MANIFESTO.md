@@ -1,8 +1,8 @@
-# Groomin
+# garmoovin'
 
 ## Purpose
 
-Groomin is a web-based Garmin activity cleanup utility. It makes an archive of recorded activities visually browsable, so dozens of events can be scanned by route rather than opened one at a time. The goal is to recognize related activities, give them useful names, and eventually write those names back to Garmin Connect.
+garmoovin' is a web-based Garmin activity cleanup utility. It makes an archive of recorded activities visually browsable, so dozens of events can be scanned by route rather than opened one at a time. The goal is to recognize related activities, give them useful names, and eventually write those names back to Garmin Connect.
 
 ## Vision
 

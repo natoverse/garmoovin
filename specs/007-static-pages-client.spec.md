@@ -4,19 +4,19 @@
 
 ## What
 
-Make the primary Groomin website a fully static client deployed from Vite’s `dist` output by GitHub Actions. It must work from `/groomin/` and retain the local archive workflow: import a ZIP, browse route thumbnails, edit titles, and download JSON entirely in the browser.
+Make the primary garmoovin' website a fully static client deployed from Vite’s `dist` output by GitHub Actions. It must work from `/garmoovin/` and retain the local archive workflow: import a ZIP, browse route thumbnails, edit titles, and download JSON entirely in the browser.
 
 Evolve the downloaded JSON into the self-contained handoff to the separate Garmin writer. The writer must need only this export—not the original ZIP—so the contract carries the source and Garmin identity evidence needed to verify each remote activity before any write. The hosted website never authenticates with Garmin or makes Garmin requests.
 
 ## Acceptance Criteria
 
-- [ ] GitHub Actions builds and deploys the Vite `dist` artifact to GitHub Pages, and the app and its assets load from the `/groomin/` project path; generated `dist` files are not committed.
-- [x] Production-path coverage loads `/groomin/` and verifies ZIP import, route thumbnails, title editing, and JSON download using synthetic activity data.
+- [ ] GitHub Actions builds and deploys the Vite `dist` artifact to GitHub Pages, and the app and its assets load from the `/garmoovin/` project path; generated `dist` files are not committed.
+- [x] Production-path coverage loads `/garmoovin/` and verifies ZIP import, route thumbnails, title editing, and JSON download using synthetic activity data.
 - [x] Import, parsing, thumbnails, drafts, and export remain entirely client-side. The deployed app has no backend, Garmin authentication, Garmin requests, credentials, analytics, or activity-data uploads.
 - [x] Export uses a new documented schema version and includes a required archive fingerprint plus, for every change, the full source path, Garmin activity ID evidence, recorded start time, activity type, original title, and proposed title.
 - [x] The export contract is unambiguous and validated before download: missing required identity fields or ambiguous source identity blocks affected proposals with a visible reason.
 - [x] A conforming standalone writer can verify the intended Garmin activity using only the exported JSON and remote Garmin data; it does not require the original ZIP.
-- [x] Project documentation explains GitHub Pages use, the `/groomin/` base path, local-only processing, sensitive browser thumbnail storage and JSON downloads, the absence of Garmin access in the hosted app, and the separate writer trust boundary.
+- [x] Project documentation explains GitHub Pages use, the `/garmoovin/` base path, local-only processing, sensitive browser thumbnail storage and JSON downloads, the absence of Garmin access in the hosted app, and the separate writer trust boundary.
 
 ## Scope
 
@@ -35,7 +35,7 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 
 ## Implementation decisions
 
-- Vite's base path and the browser test server use `/groomin/`. The `Deploy Pages` workflow runs on `main`, gates its `dist` upload on the browser suite, and deploys that artifact using GitHub Pages' environment and scoped deployment permissions. Pages must be enabled with GitHub Actions as the source before hosted deployment.
+- Vite's base path and the browser test server use `/garmoovin/`. The `Deploy Pages` workflow runs on `main`, gates its `dist` upload on the browser suite, and deploys that artifact using GitHub Pages' environment and scoped deployment permissions. Pages must be enabled with GitHub Actions as the source before hosted deployment.
 - The website has no Garmin API client, auth controls, result synchronization, proxy, or backend. Spec 006's grouping behavior remains intact.
 - Schema version **2** has exactly `schemaVersion`, `archiveFingerprint` (64 lowercase SHA-256 hex characters), and nonempty `changes`. Each change requires non-null `sourceFile`, `garminActivityId`, `recordedStartTime`, `activityType`, `originalTitle`, and `newTitle`. See README for the exact constraints and writer commands.
 - `garminActivityId` is a positive decimal string derived from the `garmin-<id>.gpx` basename; `recordedStartTime` is the viewer's recorded date in UTC `YYYY-MM-DDTHH:mm:ss.sssZ`, year 0001–9999. Unknown dates/types or unverifiable IDs block affected drafts. Preserve full source paths and original/proposed titles.
@@ -58,7 +58,7 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 - Restyle the existing viewer using the supplied cream/brown/rust/amber/olive tokens, rounded panels, offset shadows, and readable focus/error/disabled states. Keep imports, filtering, grouping, drafts, export, and the standalone writer unchanged.
 - Display the supplied logo at the top of the app and README. Commit only the extracted public theme and optimized logo; keep the design ZIP ignored and do not ship its example HTML or support script.
 - Load Bagel Fat One, Hanken Grotesk, and Space Mono using the supplied Google Fonts CDN link with `display=swap` and local fallbacks. This explicitly permits public typography requests to Google's font domains, not activity uploads, analytics, or Garmin access. Document connection metadata and suppress referrers.
-- Preserve the `/groomin/` build path, accessible keyboard controls, contained mobile tables, and reduced-motion preferences. Browser tests stub the font service to verify fallback behavior without relying on external availability.
+- Preserve the `/garmoovin/` build path, accessible keyboard controls, contained mobile tables, and reduced-motion preferences. Browser tests stub the font service to verify fallback behavior without relying on external availability.
 
 ## External activity link decisions (2026-09-17)
 
@@ -71,3 +71,11 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 - Schema 3 retains the same top-level fields and required per-change identity fields: `sourceFile`, `garminActivityId`, `recordedStartTime`, `activityType`, and `originalTitle`. `activityType` is the starting type, never the proposed type.
 - Each schema-3 change contains optional `newTitle` and/or `newActivityType`, with at least one effective change. Omit unchanged fields, never emit null. `newTitle` follows the existing trimmed/nonempty/changed rule. `newActivityType` is a canonical lowercase Garmin type key (for example `trail_running`), matching `[a-z][a-z0-9_]*`, not `unknown`, and different from the normalized starting type.
 - Retain strict unknown/duplicate-field rejection, full source and duplicate-target checks, and the 1 MiB limit. The writer resolves type keys to Garmin catalog IDs; the browser neither guesses numerical type IDs nor fetches the catalog.
+
+## garmoovin rebrand decisions (2026-09-18)
+
+- Supersede the earlier Groomin branding: project/package/repository identifiers use `garmoovin`; visible app branding, including the page title, logo alternative text, and footer, uses `garmoovin'`.
+- Replace the old logo with the supplied root `garmoovin.png`. Its actual encoding is JPEG; ship it as an optimized `src/assets/garmoovin-logo.jpg`, shared by the app and README, without retaining a redundant root copy.
+- Set the production/test base path to `/garmoovin/`. Commit and push the implementation to `main`, then rename the repository to `natoverse/garmoovin`, update `origin` and the repository homepage, and deploy at the new Pages path.
+- Keep `garmin_writer`, Garmin API terminology, JSON schema versions, and `garmin-title-mappings.json` unchanged: those are integration contracts, not app branding.
+- Preserve the browser's existing `groomin-activities` storage key on the same origin so saved metadata and cached processing survive the URL change. Keep older thumbnail database names only for explicit cleanup. The private writer storage transition is recorded in spec 005.

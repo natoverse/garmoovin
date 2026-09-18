@@ -102,3 +102,8 @@ The workflow remains: select a ZIP, review route bundles, edit individual titles
 - Spec 006 adds D70 coverage and a length-weighted geographic-center safeguard alongside strict D95 matching. Extend pair records with optional numeric `areaD70`, measured in meters like the existing `score` (D95); validate both distances before reuse.
 - Keep the database and prepared-geometry versions unchanged. Old pairs without D70 remain valid for strict matching; when area matching needs them, compute both percentiles using the restored spatial tree and overwrite just that pair record. No activity cache clearing, GPX parsing, preview rebuilding, or loss of remembered titles is needed.
 - Compute geographic centers/radii lazily from cached weighted samples and retain them in session memory, not as new required activity fields. Fresh and upgraded pair scores work across modes and feet-based tolerance changes. Cache-generation checks and cancellation continue to prevent stale writes.
+
+## Rebrand compatibility decision (2026-09-18)
+
+- The app is now `garmoovin'` at `/garmoovin/`, but `groomin-activities` remains its stable IndexedDB key. Changing only the project path on the same origin must not discard remembered titles/types, previews, geometry, or pair scores. There is no cache migration or version bump for branding.
+- Keep legacy thumbnail database names in the clear action so the rename cannot strand sensitive cached previews. These names are compatibility identifiers, not visible branding.
