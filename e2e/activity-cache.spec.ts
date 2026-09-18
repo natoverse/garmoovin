@@ -131,7 +131,8 @@ test('overlapping archives restore only selected IDs and process only ten additi
   await expect(page.locator('.activity-name[title="garmin-1.gpx"]')).toHaveCount(0)
 })
 
-test('backfills legacy durations once without losing saved titles, previews, or pair scores', async ({ page }) => {
+for (const changeType of [false, true]) {
+test(`backfills legacy durations once without losing saved titles${changeType ? ' and types' : ''}, previews, or pair scores`, async ({ page }) => {
   await probe(page)
   await page.goto('./')
   const archive = await zip([
@@ -145,10 +146,17 @@ test('backfills legacy durations once without losing saved titles, previews, or 
   await expect(first.locator('.activity-duration')).toContainText('01:02')
   await group(page)
   await page.locator('.activity-name[title="garmin-1.gpx"]').fill('Remembered title')
+  if (changeType) {
+    const type = first.getByRole('combobox')
+    await type.focus()
+    await type.selectOption('trail_running')
+  }
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save JSON (1)' }).click()
   await download
-  await expect(page.locator('.export-notice')).toContainText('Exported titles will be the starting titles on your next load.')
+  await expect(page.locator('.export-notice')).toContainText(changeType
+    ? 'Exported titles and types will be the starting titles and types on your next load.'
+    : 'Exported titles will be the starting titles on your next load.')
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve) => {
       const request = indexedDB.open('groomin-activities', 1)
@@ -177,6 +185,7 @@ test('backfills legacy durations once without losing saved titles, previews, or 
   await expect(page.locator('.cache-summary')).toHaveText('1 from cache · 2 processed')
   await expect(page.locator('.cache-summary')).toHaveAttribute('data-extracted', '2')
   await expect(first.locator('.activity-name')).toHaveValue('Remembered title')
+  await expect(first.locator('.type-label')).toHaveText(changeType ? 'Trail Running' : 'Hiking')
   await expect(first.locator('.activity-duration')).toContainText('01:02')
   expect(await page.evaluate(() => window.cacheProbe)).toEqual({ parses: 2, hashes: 0, renders: 0, trigonometry: 0 })
   await group(page)
@@ -187,6 +196,7 @@ test('backfills legacy durations once without losing saved titles, previews, or 
   await expectLoaded(page, 3)
   await expect(page.locator('.cache-summary')).toHaveText('3 from cache · 0 processed')
   await expect(first.locator('.activity-name')).toHaveValue('Remembered title')
+  await expect(first.locator('.type-label')).toHaveText(changeType ? 'Trail Running' : 'Hiking')
   await expect(first.locator('.activity-duration')).toContainText('01:02')
   await expect(page.locator('.activity-duration')).toHaveText([
     'Elapsed duration (hours:minutes): 00:00',
@@ -195,6 +205,7 @@ test('backfills legacy durations once without losing saved titles, previews, or 
   ])
   expect(await page.evaluate(() => window.cacheProbe)).toEqual({ parses: 0, hashes: 0, renders: 0, trigonometry: 0 })
 })
+}
 
 test('same-ID changes stay cached until manual clearing, including metadata, profiles and comparison results', async ({ page }) => {
   await probe(page)

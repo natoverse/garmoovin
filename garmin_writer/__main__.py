@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from . import auth
 from .garmin import GarminAdapter, GarminError
 from .mapping import MappingError, load_mapping
-from .models import Batch
+from .models import Batch, normalize_type
 from .storage import Journal, JournalError, StorageError, journal_directory, storage_lock, token_directory
 from .writer import Writer, WriterError
 
@@ -18,37 +18,27 @@ def display(batch: Batch) -> None:
     data = batch.model_dump()
     for row, item in zip(data["items"], batch.items):
         row["changedSinceExport"] = item.currentTitle is not None and item.currentTitle != item.proposal.originalTitle
+        row["typeChangedSinceExport"] = item.currentActivityType is not None and item.currentActivityType != normalize_type(item.proposal.activityType)
     print(json.dumps(data, indent=2, ensure_ascii=True))
     print("Outcomes:", ", ".join(f"{count} {name}" for name, count in sorted(Counter(item.status for item in batch.items).items())))
-
-
-def confirmed(batch: Batch) -> bool:
-    eligible = sum(item.status == "eligible" for item in batch.items)
-    if eligible == 0:
-        print("No eligible renames. No writes sent.")
-        return False
-    if not sys.stdin.isatty():
-        print("Applying requires an interactive terminal. No writes sent.", file=sys.stderr)
-        return False
-    print(f"Review above: {eligible} eligible renames for account {json.dumps(batch.account.id)}.")
-    while True:
-        answer = input("Type APPLY to authorize only these reviewed renames, or CANCEL to exit: ")
-        if answer == "APPLY":
-            return True
-        if answer == "CANCEL":
-            return False
-        print("No writes authorized yet. Enter exactly APPLY or CANCEL; blank input does not exit.", flush=True)
+    blocked = [item for item in batch.items if item.status == "blocked"]
+    if blocked:
+        print(f"\nBlocked activities ({len(blocked)}):")
+        for item in blocked:
+            title = item.currentTitle if item.currentTitle is not None else item.proposal.originalTitle
+            print(f"- {json.dumps(title)} (Garmin ID: {json.dumps(item.activityId) if item.activityId else 'unavailable'}; source: {json.dumps(item.proposal.sourceFile)})")
+            print(f"  Reason: {json.dumps(item.reason or 'No explanation was provided.')}")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Review and apply a Groomin schema-v2 JSON export. No website connection or ZIP is needed.")
+    parser = argparse.ArgumentParser(description="Review and apply a Groomin schema-v2/v3 JSON export. No website connection or ZIP is needed.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("login", help="Authenticate in this terminal and save a private session; no activity writes")
     for name in ("review", "apply"):
-        command = commands.add_parser(name, help="Read and review only" if name == "review" else "Fresh review followed by explicit interactive confirmation")
-        command.add_argument("mapping", type=Path, help="Downloaded schemaVersion 2 JSON")
+        command = commands.add_parser(name, help="Read and review only" if name == "review" else "Review and execute eligible changes immediately, without prompting")
+        command.add_argument("mapping", type=Path, help="Downloaded schemaVersion 2 (titles) or 3 (titles/types) JSON")
     reconcile = commands.add_parser("reconcile", help="Read the previous journal and Garmin without replaying writes")
-    reconcile.add_argument("--apply", action="store_true", help="After reconciliation, offer interactive confirmation for remaining renames")
+    reconcile.add_argument("--apply", action="store_true", help="After reconciliation, execute remaining eligible changes without prompting")
     args = parser.parse_args(argv)
     try:
         if args.command == "login":
@@ -63,13 +53,15 @@ def main(argv: list[str] | None = None) -> int:
             writer = Writer(GarminAdapter(directory), journal)
             writer.connect()
             batch = writer.prepare(mapping.proposals()) if mapping else writer.reconcile()
-            print("Read-only review. changedSinceExport flags differences from the original GPX title.")
+            print("Read-only review. changedSinceExport and typeChangedSinceExport flag differences from the original GPX title and type.")
             display(batch)
             if args.command == "review" or (args.command == "reconcile" and not args.apply):
                 return 0 if all(item.status in ("eligible", "already_applied") for item in batch.items) else 1
-            if not confirmed(batch):
-                print("No writes authorized.")
+            eligible = sum(item.status == "eligible" for item in batch.items)
+            if eligible == 0:
+                print("No eligible changes. No writes sent.")
                 return 0 if all(item.status == "already_applied" for item in batch.items) else 1
+            print(f"Applying {eligible} eligible activity changes for account {json.dumps(batch.account.id)}.", flush=True)
             result = writer.apply(batch.id)
             print("Operation results:")
             display(result)
@@ -77,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("Reconcile before retrying: python -m garmin_writer reconcile", file=sys.stderr)
             return 0 if not result.needs_recovery and all(item.status in ("confirmed", "already_applied") for item in result.items) else 1
     except ValidationError:
-        print("Invalid schema-v2 mapping fields or journal structure. Required identity must be complete, consistent, and unique; unknown fields are rejected.", file=sys.stderr)
+        print("Invalid schema-v2/v3 mapping fields or journal structure. Required identity must be complete, consistent, and unique; unknown fields are rejected.", file=sys.stderr)
         return 2
     except (GarminError, JournalError, WriterError, MappingError, StorageError) as error:
         print(str(error), file=sys.stderr)

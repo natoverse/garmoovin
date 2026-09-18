@@ -1,7 +1,18 @@
 from copy import deepcopy
+from contextlib import contextmanager
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
 
 from garmin_writer.garmin import GarminError
 from garmin_writer.models import Account, Proposal, ReviewRequest
+
+
+@contextmanager
+def private_test_directory():
+    directory = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent)
+    with directory, patch("garmin_writer.storage.ROOT", Path(directory.name) / "repository"):
+        yield directory
 
 
 class FakeGarmin:
@@ -18,6 +29,14 @@ class FakeGarmin:
         self.reads = []
         self.on_read = None
         self.on_write = None
+        self.on_type_write = None
+        self.type_writes = []
+        self.catalog = [
+            {"typeId": 3, "typeKey": "hiking", "parentTypeId": 17},
+            {"typeId": 1, "typeKey": "running", "parentTypeId": 17},
+            {"typeId": 6, "typeKey": "trail_running", "parentTypeId": 1},
+        ]
+        self.catalog_reads = 0
         self.connects = 0
 
     def connect(self):
@@ -44,6 +63,17 @@ class FakeGarmin:
             self.on_write(activity_id, title)
         else:
             self.records[activity_id]["activityName"] = title
+
+    def activity_types(self):
+        self.catalog_reads += 1
+        return deepcopy(self.catalog)
+
+    def set_type(self, activity_id, activity_type):
+        self.type_writes.append((activity_id, activity_type.model_dump()))
+        if self.on_type_write:
+            self.on_type_write(activity_id, activity_type)
+        else:
+            self.records[activity_id]["activityTypeDTO"] = activity_type.model_dump()
 
 
 def proposal(number=1, **overrides):

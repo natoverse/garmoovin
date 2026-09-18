@@ -1,5 +1,4 @@
 import os
-import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -9,12 +8,12 @@ from garmin_writer.garmin import GarminError
 from garmin_writer.models import Account
 from garmin_writer.writer import Writer, WriterError
 from garmin_writer.storage import Journal, JournalError, private_directory, storage_lock
-from garmin_writer.tests.helpers import FakeGarmin, proposal, request
+from garmin_writer.tests.helpers import FakeGarmin, private_test_directory, proposal, request
 
 
 class WriterTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = self.enterContext(private_test_directory())
         self.journal = Journal(Path(self.temp.name).resolve() / "journal")
         self.fake = FakeGarmin()
         self.service = Writer(self.fake, self.journal)

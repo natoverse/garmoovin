@@ -171,20 +171,20 @@ export class ActivityCache {
     signal.throwIfAborted()
   }
 
-  async writeTitles(titles: ReadonlyMap<string, string>, generation: number): Promise<boolean> {
+  async writeEdits(edits: ReadonlyMap<string, Partial<Pick<Activity, 'name' | 'type'>>>, generation: number): Promise<boolean> {
     if (!this.allowed(generation)) return false
     let remembered = true
     let writeError: unknown
     try {
       await this.transaction(['activities'], 'readwrite', (tx) => {
         const store = tx.objectStore('activities')
-        for (const [id, name] of titles) {
+        for (const [id, fields] of edits) {
           const request = store.get(id)
           request.onsuccess = () => {
             try {
               const record: unknown = request.result
               if (validRecord(record)) {
-                store.put({ ...record, metadata: { ...record.metadata, name } }, id)
+                store.put({ ...record, metadata: { ...record.metadata, ...fields } }, id)
               } else {
                 remembered = false
               }

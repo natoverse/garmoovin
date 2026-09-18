@@ -6,21 +6,21 @@
 
 Provide a standalone Python CLI that accepts the self-contained, versioned JSON edit configuration downloaded by the static website. It requires neither the original ZIP nor a connection to the website. Saving JSON and all browser interactions remain local-only, with no Garmin authentication or write-back controls.
 
-The CLI uses `garminconnect` to authenticate, read activity details, and update activity names. Before any writes, show the connected account and a review of each source activity, verified Garmin activity ID, current Garmin title, and proposed title, then require explicit terminal confirmation.
+The CLI uses `garminconnect` to authenticate, read activity details, and update activity names and types. Before any writes, show the connected account and a review of each source activity, verified Garmin activity ID, and current/proposed values. Invoking `apply` or `reconcile --apply` authorizes eligible writes without a terminal confirmation prompt.
 
 Report results per activity rather than presenting a partially successful batch as complete. Preserve the input JSON and GPX files. Results belong to terminal output and a private local journal, not live browser state.
 
 ## Acceptance Criteria
 
-- [x] The website never contacts Garmin. The CLI validates schema-v2 JSON without requiring the ZIP; review/login never send writes, and apply requires explicit interactive confirmation.
+- [x] The website never contacts Garmin. The CLI validates schema-v2/v3 JSON without requiring the ZIP; review/login never send writes, and apply executes eligible changes without prompting.
 - [x] Authentication supports first login, MFA when required, saved-session reuse, token refresh, and an actionable reauthentication state. Login or reconnection never automatically starts or resumes writes.
 - [x] The CLI checks exported candidate IDs against the known `garmin-<id>.gpx` filename pattern, then verifies exact owned-account membership and remote identity, including recorded start time and activity type. Invalid input or missing/ambiguous identity fails validation; remote contradictions block affected proposals with reasons. Never guess a target from its title or nearest date.
 - [x] Review includes every exported proposal, including those drafted on hidden rows, identifies blocked entries, and shows the exact eligible count and connected account. Differences between imported and current Garmin titles are prominently flagged for review.
-- [x] Confirmation authorizes only the displayed eligible proposals. The CLI binds the in-memory batch to the account, source identities, verified IDs, reviewed current titles, and proposed titles; subsequent input-file edits cannot alter an approved batch.
+- [x] The apply command authorizes only the displayed eligible proposals. The CLI binds the in-memory batch to the account, source identities, verified IDs, reviewed current values, and proposed values; subsequent input-file edits cannot alter an approved batch.
 - [x] Immediately before each write, re-read the remote title. If it differs from the reviewed title, mark a conflict and require a new review; if it already equals the proposed title, report "Already applied" without writing. Modify only the activity name.
 - [x] Persist a local operation journal before sending writes, recording account identity, source identity, activity ID, before/after titles, and per-item outcome. If the initial journal cannot be saved, send no writes. Keep it separate from spec 004's export format.
 - [x] Read back each updated title before marking it confirmed. Report confirmed, already applied, blocked/conflict, failed, not attempted, and uncertain outcomes separately. A timeout, interrupted session, or failed verification is not proof of either success or failure.
-- [x] Prevent overlapping submissions. Pause remaining writes on authentication failure or rate limiting, with visible recovery guidance. Before retrying or recovering an interrupted batch, reconcile uncertain items against Garmin and require confirmation for remaining writes; do not blindly replay the batch.
+- [x] Prevent overlapping submissions. Pause remaining writes on authentication failure or rate limiting, with visible recovery guidance. Before retrying or recovering an interrupted batch, reconcile uncertain items against Garmin and require an explicit `reconcile --apply` invocation for remaining writes; do not blindly replay the batch.
 - [x] Repeated/recovered batches skip already-applied titles after verifying remote state. Failed and unattempted proposals remain in the unchanged JSON and journal. Browser drafts, search, filters, grouping, and thumbnails remain independent.
 - [x] No HTTP server, localhost bridge, listener, or browser authentication session is introduced. Reject invalid JSON before connecting and prevent simultaneous writers sharing private token/journal storage.
 - [x] Credentials and tokens never enter frontend assets, browser storage, JSON exports, or logs. Token storage, journals, and any secret configuration are excluded from Git and deployment artifacts. No GPX archive or route coordinates are uploaded; only required authentication, activity reads, and title updates leave the computer for Garmin.
@@ -30,7 +30,7 @@ Report results per activity rather than presenting a partially successful batch 
 ### In scope
 
 - A standalone Python CLI, terminal-only authentication, saved-session reuse, and account display.
-- Verified activity matching, batch review and confirmation, title-only updates, and read-back verification.
+- Verified activity matching, batch review, explicit apply commands, title/type updates, and read-back verification.
 - A local recovery journal, partial-failure reporting, and safe retry behavior.
 
 ### Out of scope
@@ -77,3 +77,25 @@ Report results per activity rather than presenting a partially successful batch 
 - Blank or unrecognized confirmation input re-prompts instead of exiting. This prevents a queued newline from returning the user to the shell before they can type `APPLY`.
 - Only exact uppercase `APPLY` authorizes the displayed batch. Exact uppercase `CANCEL` exits without writes; Ctrl+C and end-of-input still interrupt. No REPL or unattended approval mode is introduced.
 - The shared confirmation behavior applies to both `apply` and `reconcile --apply`; all account, identity, conflict, journal, and read-back checks remain unchanged.
+
+## Activity type editing decisions (2026-09-18)
+
+- Extend the standalone writer to accept spec 007's schema 3 as well as existing schema 2. Support type-only and combined edits without changing fields omitted from the proposal.
+- Resolve proposed type keys through the authenticated Garmin activity-type catalog during read-only review. Reject missing or ambiguous catalog entries; bind the resolved type ID, key, and parent ID to the reviewed, journaled batch. Use the pinned library's `set_activity_type` rather than assuming IDs.
+- Review starting/current/proposed titles and types. Retain owned-account membership, exact activity ID, and start-time verification. A type-edit target may match either its starting type or its proposed type, to permit idempotent retry after success; unrelated types remain blocked. Title-only proposals retain strict original-type identity checks.
+- Re-read remote state before each mutation. Changes since review conflict; fields already at their requested values are not replayed. Journal before every possible mutation and verify read-back of every requested field before reporting confirmation.
+- Combined edits are not atomic in Garmin. Persist and reconcile partial completion, preserve unrequested fields, and require a fresh review/confirmation before completing remaining work. Authentication failure, rate limits, uncertainty, and overlapping-writer safeguards remain unchanged. Legacy title-only journals must remain recoverable.
+- Preserve completed-field history even when a reconciliation read fails for that row and another eligible row is applied. A blocked row carried into a new journal must not lose the evidence that prevents replaying its completed fields over later external edits.
+
+## Blocked activity reporting (2026-09-18)
+
+- After outcome counts, list every blocked activity with its current title (falling back to the original title), Garmin ID, source path, and existing blocking reason. Explicitly label missing IDs or explanations rather than guessing the cause.
+- Use the shared display path for review, apply results, and reconciliation. Retain JSON details, escape terminal control characters, and omit the blocked section when there are no blocked rows.
+- Reporting changes neither eligibility, authorization, exit codes, nor Garmin writes.
+
+## Direct apply decisions (2026-09-18)
+
+- Supersede the earlier interactive-confirmation requirements and September 17 prompt refinement: choosing `apply` is authorization to execute eligible edits after displaying a fresh immutable review. Do not read stdin or require a TTY for activity commands.
+- `review` and plain `reconcile` remain read-only. `reconcile --apply` explicitly authorizes execution of remaining eligible work after successful reconciliation; it does not prompt.
+- Login remains interactive. Account/identity checks, blocked reporting, conflict detection, journaling, read-back, and uncertain-write recovery remain mandatory. Input JSON is never rewritten.
+- Existing scripts invoking `apply` now perform writes without waiting. Use `review` for a preview; no `--yes` flag or automatic retry mode is introduced.

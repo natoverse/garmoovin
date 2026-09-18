@@ -30,7 +30,7 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 ## Notes
 
 - The next export version supersedes spec 004’s version 1 handoff where needed. Preserve `archiveFingerprint`, `sourceFile`, and original/proposed titles while adding the required Garmin ID evidence, recorded start time, and activity type; document exact field names and nullability with the implementation.
-- Garmin ID evidence is a candidate identity claim, not authorization to write. The standalone writer must independently verify it against remote identity data, present the proposed changes for review, require explicit confirmation, journal the operation, write only the title, and read the title back.
+- Garmin ID evidence is a candidate identity claim, not authorization to write. The standalone writer must independently verify it against remote identity data, present the proposed changes for review, require an explicit apply command, journal the operation, write only requested fields, and read them back.
 - This separation supports the manifesto’s privacy and trustworthy-write-back principles: hosting serves code only, while sensitive Garmin access remains an explicit local operation.
 
 ## Implementation decisions
@@ -64,3 +64,10 @@ Evolve the downloaded JSON into the self-contained handoff to the separate Garmi
 
 - Spec 001 adds explicit links to Garmin Connect activity detail pages. These open Garmin's website in a separate tab only when activated, without opener access or a referrer; Garmin handles any required login.
 - The no-Garmin-access boundary still prohibits API calls, automatic lookups, authentication, and credentials in the viewer. External navigation sends only the filename-derived activity ID in the URL, not archive contents or draft titles, and does not change the standalone writer or JSON contract.
+
+## Activity edit contract decisions (2026-09-18)
+
+- Preserve schema 2 unchanged for title-only exports and backwards-compatible CLI input. Use schema 3 whenever the snapshot includes any type change.
+- Schema 3 retains the same top-level fields and required per-change identity fields: `sourceFile`, `garminActivityId`, `recordedStartTime`, `activityType`, and `originalTitle`. `activityType` is the starting type, never the proposed type.
+- Each schema-3 change contains optional `newTitle` and/or `newActivityType`, with at least one effective change. Omit unchanged fields, never emit null. `newTitle` follows the existing trimmed/nonempty/changed rule. `newActivityType` is a canonical lowercase Garmin type key (for example `trail_running`), matching `[a-z][a-z0-9_]*`, not `unknown`, and different from the normalized starting type.
+- Retain strict unknown/duplicate-field rejection, full source and duplicate-target checks, and the 1 MiB limit. The writer resolves type keys to Garmin catalog IDs; the browser neither guesses numerical type IDs nor fetches the catalog.
