@@ -31,6 +31,7 @@ export default function App() {
   const [typeSelection, setTypeSelection] = useState<TypeSelection>({ defaultSelected: true, exceptions: new Set() })
   const [drafts, setDrafts] = useState<Map<string, string>>(() => new Map())
   const [typeDrafts, setTypeDrafts] = useState<Map<string, string>>(() => new Map())
+  const [editingType, setEditingType] = useState<string | null>(null)
   const [lastExportSignature, setLastExportSignature] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [exportNotice, setExportNotice] = useState<{ error: boolean; message: string } | null>(null)
@@ -73,6 +74,7 @@ export default function App() {
     downloadUrl.current = null
     setDrafts(new Map())
     setTypeDrafts(new Map())
+    setEditingType(null)
     setLastExportSignature(null)
     setExportNotice(null)
     setSearch('')
@@ -282,12 +284,16 @@ export default function App() {
                       aria-label={`Activity type for ${activity.name} (${activity.sourceFile})`}
                       aria-describedby="type-edit-help"
                       value={typeDrafts.get(activity.id) ?? ''}
+                      onPointerDown={() => setEditingType(activity.id)}
+                      onFocus={() => setEditingType(activity.id)}
+                      onBlur={() => setEditingType(null)}
                       onChange={(event) => editType(activity.id,
                         !event.currentTarget.value || event.currentTarget.value === activityTypeKey(activity.type)
                           ? null : event.currentTarget.value)}
                     >
                       <option value="">Keep {activity.type}</option>
-                      {editableTypes.filter((key) => key !== activityTypeKey(activity.type)).map((key) => (
+                      {editableTypes.filter((key) => key !== activityTypeKey(activity.type)
+                        && (editingType === activity.id || key === typeDrafts.get(activity.id))).map((key) => (
                         <option key={key} value={key}>{activityTypeLabel(key)}</option>
                       ))}
                     </select>

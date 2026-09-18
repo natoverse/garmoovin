@@ -72,3 +72,4 @@ For this stage, the app runs on localhost. No deployment, Garmin authentication,
 - Count changed activities, not changed fields. Export type-only, title-only, and combined proposals, including hidden rows, with the same identity checks, snapshot semantics, and discard warnings. Preserve original metadata and GPX files.
 - Title-only exports retain schema 2. Any export containing a type change uses schema 3 as defined in spec 007; an omitted field means leave that remote field unchanged.
 - Save JSON remembers only exported title/type fields in complete cached records for the next import, as specified in spec 009. No bulk recategorization, Garmin browser requests, or automatic write-back is introduced.
+- Populate each native selector's full option list on pointer/keyboard focus; inactive selectors retain only their starting and selected values. This avoids thousands of unnecessary option elements when regrouping large archives.
